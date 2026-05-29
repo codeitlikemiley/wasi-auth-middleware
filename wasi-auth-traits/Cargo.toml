@@ -10,7 +10,7 @@ documentation = "https://docs.rs/wasi-auth-traits"
 keywords = ["wasi", "auth", "middleware", "jwt", "oauth"]
 categories = ["authentication", "wasm", "web-programming"]
 readme = "../README.md"
-authors = ["Enzo Nocera", "Uriah Galang"]
+authors = ["Uriah Galang"]
 
 [dependencies]
 serde.workspace = true

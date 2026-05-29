@@ -10,7 +10,7 @@ documentation = "https://docs.rs/wasi-auth-interceptor"
 keywords = ["wasi", "auth", "middleware", "jwt", "interceptor"]
 categories = ["authentication", "wasm", "web-programming"]
 readme = "../README.md"
-authors = ["Enzo Nocera", "Uriah Galang"]
+authors = ["Uriah Galang"]
 
 [lib]
 crate-type = ["cdylib"]

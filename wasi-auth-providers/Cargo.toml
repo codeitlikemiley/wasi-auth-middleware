@@ -10,7 +10,7 @@ documentation = "https://docs.rs/wasi-auth-providers"
 keywords = ["wasi", "auth", "middleware", "oauth2", "google"]
 categories = ["authentication", "wasm", "web-programming"]
 readme = "../README.md"
-authors = ["Enzo Nocera", "Uriah Galang"]
+authors = ["Uriah Galang"]
 
 [dependencies]
 wasi-auth-core = { version = "0.1.0", path = "../wasi-auth-core" }
