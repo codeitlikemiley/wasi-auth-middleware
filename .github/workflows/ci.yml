@@ -21,6 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: codeitlikemiley/leptos_wasi
+          ref: serverfn
           path: leptos_wasi
 
       - name: Move leptos_wasi to sibling directory
