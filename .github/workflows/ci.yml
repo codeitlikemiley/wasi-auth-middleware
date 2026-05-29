@@ -17,6 +17,12 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
+      - name: Checkout leptos_wasi sibling repository
+        uses: actions/checkout@v4
+        with:
+          repository: codeitlikemiley/leptos_wasi
+          path: ../leptos_wasi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
