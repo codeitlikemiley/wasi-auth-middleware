@@ -1,0 +1,5 @@
+target/
+.agents/
+*.log
+*.txt
+.DS_Store

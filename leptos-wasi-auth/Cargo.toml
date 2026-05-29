@@ -1,0 +1,23 @@
+[package]
+name = "leptos-wasi-auth"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasi-auth-core = { path = "../wasi-auth-core" }
+serde.workspace = true
+serde_json.workspace = true
+leptos = { version = "0.8.9", default-features = false, optional = true }
+http = "1.1"
+
+[features]
+default = ["ssr"]
+ssr = ["dep:leptos", "leptos/ssr"]
+hydrate = ["dep:leptos", "leptos/hydrate"]
+csr = ["dep:leptos", "leptos/csr"]
+"unsafe-dev-fallback" = []
+leptos = ["dep:leptos"]
+
+[dev-dependencies]
+rsa = { workspace = true }
+rand = { workspace = true }

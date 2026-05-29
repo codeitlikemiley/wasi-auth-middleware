@@ -1,0 +1,25 @@
+[package]
+name = "wasi-auth-traits"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "wasi"))'.dependencies]
+spin-sdk = { version = "3.0", optional = true }
+http = { version = "1.0", optional = true }
+bytes = { version = "1.0", optional = true }
+futures = { version = "0.3", optional = true }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "wasi")))'.dependencies]
+ureq = { version = "2.9", features = ["json"], optional = true }
+
+[features]
+default = []
+spin = ["spin-sdk"]
+sqlite = ["spin-sdk"]
+http-email = ["spin-sdk", "http", "bytes", "ureq", "futures"]
+

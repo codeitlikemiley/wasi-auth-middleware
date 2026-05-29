@@ -1,0 +1,17 @@
+[package]
+name = "wasi-auth-interceptor"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasi-auth-core = { path = "../wasi-auth-core" }
+wit-bindgen = "0.24.0"
+serde.workspace = true
+serde_json.workspace = true
+
+
+
+

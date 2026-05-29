@@ -1,0 +1,7 @@
+package wasi:http@0.2.2;
+
+interface incoming-handler {
+    use wasi:http/types@0.2.9.{incoming-request, response-outparam};
+
+    handle: func(request: incoming-request, response-out: response-outparam);
+}

@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "wasi-auth-traits",
+    "wasi-auth-core",
+    "leptos-wasi-auth",
+    "wasi-auth-interceptor",
+    "examples/leptos-auth-demo",
+    "tests/mock-auth-server",
+    "tests/e2e-runner",
+]
+
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+jsonwebtoken = { version = "9.3", default-features = false, features = ["use_pem"] }
+tokio = { version = "1.38" }
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+rsa = { version = "0.9", default-features = false, features = ["pem", "std", "sha2"] }
+sha2 = { version = "0.10", features = ["oid"] }
+
+urlencoding = "2.1"
+
+[patch.crates-io]
+wasm-streams = { path = "../wasm-streams-patched" }
+wasm-bindgen = { path = "../wasm-bindgen-dummy" }
+wasm-bindgen-macro = { path = "../wasm-bindgen-macro-dummy" }
+js-sys = { path = "../js-sys-dummy" }
+web-sys = { path = "../web-sys-dummy" }
+
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1
+panic = "abort"
+
