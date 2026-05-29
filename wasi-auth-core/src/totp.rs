@@ -12,6 +12,7 @@ type HmacSha1 = Hmac<Sha1>;
 const ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 /// Encodes a byte slice into a Base32 string according to RFC 4648.
+#[allow(clippy::manual_is_multiple_of)]
 pub fn base32_encode(data: &[u8]) -> String {
     let mut result = String::new();
     let mut bit_buffer: u32 = 0;

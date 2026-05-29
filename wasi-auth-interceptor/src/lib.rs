@@ -76,8 +76,7 @@ wit_bindgen::generate!({
 struct Interceptor;
 
 fn match_path(path: &str, pattern: &str) -> bool {
-    if pattern.ends_with('*') {
-        let prefix = &pattern[..pattern.len() - 1];
+    if let Some(prefix) = pattern.strip_suffix('*') {
         path.starts_with(prefix)
     } else {
         path == pattern

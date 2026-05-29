@@ -1,3 +1,4 @@
+#![allow(clippy::needless_borrows_for_generic_args, clippy::useless_vec)]
 use anyhow::{Context, Result};
 use serde_json::json;
 use std::net::TcpListener;
@@ -157,6 +158,7 @@ fn compose_components(
     Ok(())
 }
 
+#[allow(unused_variables)]
 fn spawn_wasmtime(
     workspace_root: &std::path::Path,
     composed_wasm: &std::path::Path,

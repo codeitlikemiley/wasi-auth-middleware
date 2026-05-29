@@ -1,3 +1,4 @@
+#![allow(clippy::unused_unit, clippy::unit_arg, unused_variables)]
 use leptos::html;
 use leptos::prelude::*;
 use leptos_router::components::*;
@@ -204,6 +205,7 @@ pub async fn verify_otp(email: String, otp: String) -> Result<bool, ServerFnErro
     }
 }
 
+#[allow(unused_variables)]
 #[server(ExchangeOauth, "/api")]
 pub async fn exchange_oauth(
     code: String,

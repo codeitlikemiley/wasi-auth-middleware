@@ -1,3 +1,4 @@
+#![allow(clippy::unnecessary_lazy_evaluations)]
 use serde::Deserialize;
 
 /// Configuration for the authentication interceptor.
