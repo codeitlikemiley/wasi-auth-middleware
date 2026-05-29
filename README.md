@@ -45,8 +45,8 @@ graph LR
 
 | Requirement          | Version          |
 |----------------------|------------------|
-| Rust edition         | `2021`           |
-| Rust stable channel  | latest stable    |
+| Rust edition         | `2024`           |
+| Rust stable channel  | ≥ 1.93.0         |
 | WASI target          | `wasm32-wasip2`  |
 
 ```bash
@@ -61,6 +61,7 @@ rustup target add wasm32-wasip2
 | **Wasmtime**   | [wasmtime.dev](https://wasmtime.dev/) (≥ 45.0.0) | Serves composed WASI components       |
 | **wac-cli**    | `cargo install wac-cli`          | Links/composes WASI components together       |
 | **wasm-tools** | `cargo install wasm-tools`       | Inspects and manipulates Wasm binaries        |
+| **just**       | `cargo install just`             | Task automation and run commands             |
 
 ### Key Dependency Versions
 
@@ -173,11 +174,11 @@ wasmtime serve composed.wasm \
 ### Test
 
 ```bash
-# Run all workspace tests (unit + integration)
-cargo test --workspace
+# Run all workspace formatting, clippy lints, and test checks:
+just check
 
-# Run E2E tests (compiles, composes, spawns, and tests automatically)
-cargo test -p e2e-runner -- --nocapture
+# Run individual examples (e.g. totp, magic_link, oauth, otp, storage_backends):
+just example <name>
 ```
 
 ## Environment Variables
@@ -250,17 +251,11 @@ Authenticated requests forwarded by the interceptor include these headers:
 
 ## Testing
 
-See [TEST_INFRA.md](./TEST_INFRA.md) for comprehensive E2E testing documentation including:
-
-- Test architecture diagram
-- Mock server endpoints (OAuth2, Email OTP, fault injection)
-- How to run specific test tiers
-- Troubleshooting guide
-
-## Project Status
-
-See [PROJECT.md](./PROJECT.md) for milestone tracking and interface contracts.
+Run all unit, integration, and E2E checks with formatting and clippy rules verified:
+```bash
+just check
+```
 
 ## License
 
-MIT
+MIT OR Apache-2.0
