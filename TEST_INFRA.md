@@ -35,7 +35,7 @@ graph TD
 ### Flow Execution Overview
 1. **Compilation**: The test runner compiles the crates in the monorepo to the `wasm32-wasip2` target.
 2. **Composition**: The runner executes WebAssembly Composer (`wac`) to link `wasi-auth-interceptor` (acting as the proxy entry point) and `examples/leptos-auth-demo` (downstream application component).
-3. **Mocks Launch**: The runner starts an in-runner HTTP mock server (Axum) on a tokio thread.
+3. **Mock Server Launch**: The runner starts a mock HTTP server (raw `TcpListener` / `TcpStream`) on a dedicated thread.
 4. **Target App Launch**: The runner spawns `wasmtime serve` or `spin up` pointing to the composed component, configuring allowed outbound network hosts to access the mock server.
 5. **Validation**: The test client executes HTTP requests to verify routing, redirects, session persistence, header injection, spoofing prevention, and OTP verification.
 
@@ -99,7 +99,7 @@ cargo test -p e2e-runner -- test_tier_4
 
 ## 4. Mock Services Reference
 
-To keep the test suite hermetic, the runner starts an Axum-based HTTP server inside the test runner process. This allows shared, in-memory state inspection between tests and mock endpoints.
+To keep the test suite hermetic, the runner starts a raw TCP HTTP server (using `std::net::TcpListener` and `TcpStream`) on a dedicated thread. This allows shared, in-memory state inspection between tests and mock endpoints.
 
 ### A. OAuth2 Provider Endpoints
 The mock server simulates multiple identity providers (Google, Facebook, X, and Custom OIDC):
@@ -136,10 +136,14 @@ The workspace is organized as follows:
 └── tests/
     ├── e2e-runner/             # Rust E2E runner orchestrator & mock runner
     │   ├── Cargo.toml
-    │   └── src/main.rs
-    └── mock-auth-server/       # Mock OAuth2 & Email HTTP server codebase
+    │   └── src/
+    │       ├── main.rs
+    │       └── app.rs          # Build, compose, spawn, test logic
+    └── mock-auth-server/       # Mock OAuth2 & Email HTTP server
         ├── Cargo.toml
-        └── src/main.rs
+        └── src/
+            ├── main.rs
+            └── app.rs          # Endpoints, state, fault injection
 ```
 
 ---
@@ -162,4 +166,4 @@ The workspace is organized as follows:
 ### WAC Composition Mismatch
 - **Symptom**: `error: component does not export interface...` or type signature validation failed during `wac compose`.
 - **Cause**: Interface mismatch between `wasi-auth-interceptor` (proxy) and `leptos-auth-demo` (downstream).
-- **Solution**: Run `wac list <component.wasm>` on both compiled components to inspect their imported and exported interfaces. Ensure both utilize identical WIT interface definitions and version numbers (e.g. `wasi:http/incoming-handler@0.2.0`).
+- **Solution**: Run `wasm-tools component wit <component.wasm>` on both compiled components to inspect their imported and exported interfaces. Ensure both utilize identical WIT interface definitions and version numbers (e.g. `wasi:http/incoming-handler@0.2.9`).

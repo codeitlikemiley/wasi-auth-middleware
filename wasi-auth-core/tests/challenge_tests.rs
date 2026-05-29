@@ -42,6 +42,9 @@ fn test_jwt_invalid_signature() {
         iss: "my-iss".to_string(),
         aud: "my-aud".to_string(),
         exp: 2000000000,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec![],
         name: None,
         email: None,
@@ -76,6 +79,9 @@ fn test_jwt_truncated_signature() {
         iss: "my-iss".to_string(),
         aud: "my-aud".to_string(),
         exp: 2000000000,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec![],
         name: None,
         email: None,
@@ -123,6 +129,9 @@ fn test_jwt_alg_none_attack() {
         iss: "my-iss".to_string(),
         aud: "my-aud".to_string(),
         exp: 2000000000,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec![],
         name: None,
         email: None,
@@ -155,6 +164,9 @@ fn test_jwt_alg_hs256_attack() {
         iss: "my-iss".to_string(),
         aud: "my-aud".to_string(),
         exp: 2000000000,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec![],
         name: None,
         email: None,
@@ -187,6 +199,9 @@ fn test_jwt_exp_overflow_boundary() {
         iss: "my-iss".to_string(),
         aud: "my-aud".to_string(),
         exp: u64::MAX,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec![],
         name: None,
         email: None,
@@ -204,6 +219,9 @@ fn test_jwt_exp_overflow_boundary() {
         iss: "my-iss".to_string(),
         aud: "my-aud".to_string(),
         exp: u64::MAX - 59,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec![],
         name: None,
         email: None,
@@ -221,6 +239,9 @@ fn test_jwt_exp_overflow_boundary() {
         iss: "my-iss".to_string(),
         aud: "my-aud".to_string(),
         exp: u64::MAX - 60,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec![],
         name: None,
         email: None,
@@ -242,13 +263,13 @@ fn test_otp_expired() {
     let now = 100000;
 
     // Store with 0 seconds expiry duration, meaning expires_at = now
-    let otp = send_and_store_otp(email, &storage, &sender, 0, now).unwrap();
+    let otp = send_and_store_otp(email, &storage, &sender, 0, now, None).unwrap();
 
     // Verify immediately at now (where expires_at = now) - it should pass
     // Wait, in_memory.rs uses std::time::SystemTime::now().as_secs() which will be > 100000.
     // So if std::time::SystemTime::now() is greater than expires_at (which is 100000), it will fail.
     // That means storing with an arbitrary timestamp "100000" in the past makes it expired instantly compared to SystemTime::now().
-    let verify_now = verify_otp(email, &otp, &storage).unwrap();
+    let verify_now = verify_otp(email, &otp, &storage, None).unwrap();
     assert!(!verify_now, "Verification at a past time (100000) relative to SystemTime::now() should fail (be treated as expired)");
 }
 
@@ -267,15 +288,15 @@ fn test_otp_expiry_past() {
     storage.store_otp(email, otp, now_real - 10).unwrap();
 
     // Verify should return false
-    let res = verify_otp(email, otp, &storage).unwrap();
+    let res = verify_otp(email, otp, &storage, None).unwrap();
     assert!(!res, "Expired OTP verification should fail");
 
     // Ensure it is consumed (deleted) even on failure
     storage.store_otp(email, otp, now_real + 100).unwrap();
-    let res_wrong = verify_otp(email, "wrong_otp", &storage).unwrap();
+    let res_wrong = verify_otp(email, "wrong_otp", &storage, None).unwrap();
     assert!(!res_wrong);
     // Verifying it again with correct OTP should now fail because it was consumed
-    let res_retry = verify_otp(email, otp, &storage).unwrap();
+    let res_retry = verify_otp(email, otp, &storage, None).unwrap();
     assert!(
         !res_retry,
         "OTP must be consumed/invalidated after one failed attempt"
@@ -292,7 +313,7 @@ fn test_otp_empty_email() {
         .as_secs();
 
     // Call send_and_store_otp with empty email
-    let otp_res = send_and_store_otp("", &storage, &sender, 300, now);
+    let otp_res = send_and_store_otp("", &storage, &sender, 300, now, None);
     assert!(
         otp_res.is_ok(),
         "OTP generation with empty email should be allowed"
@@ -301,7 +322,7 @@ fn test_otp_empty_email() {
 
     // Verification with empty email and correct OTP
     // Wait, the expiry was stored at `now + 300`, so since now = now_real (almost), it should verify successfully
-    let verify_res = verify_otp("", &otp, &storage).unwrap();
+    let verify_res = verify_otp("", &otp, &storage, None).unwrap();
     assert!(
         verify_res,
         "Verification with empty email should succeed with correct OTP"
@@ -314,7 +335,7 @@ fn test_otp_empty_email() {
         .unwrap()
         .as_secs();
     storage.store_otp("", &otp, now_real + 300).unwrap();
-    let verify_res_wrong = verify_otp("", "000000", &storage).unwrap();
+    let verify_res_wrong = verify_otp("", "000000", &storage, None).unwrap();
     assert!(
         !verify_res_wrong,
         "Verification with empty email and incorrect OTP should fail"
@@ -359,7 +380,7 @@ fn test_oauth_url_generation_boundaries() {
         redirect_uri: "https://app.com/callback".to_string(),
     };
 
-    let url = Oauth2Client::generate_auth_url(&config_with_query, "state", "scope");
+    let url = Oauth2Client::generate_auth_url(&config_with_query, "state", "scope", None);
     assert!(url.starts_with("https://auth.com/oauth?provider=google&response_type=code"));
     assert!(url.contains("client_id=id123"));
 
@@ -372,7 +393,7 @@ fn test_oauth_url_generation_boundaries() {
         redirect_uri: "https://app.com/callback".to_string(),
     };
 
-    let url2 = Oauth2Client::generate_auth_url(&config_no_query, "state", "scope");
+    let url2 = Oauth2Client::generate_auth_url(&config_no_query, "state", "scope", None);
     assert!(url2.starts_with("https://auth.com/oauth?response_type=code"));
 }
 
@@ -393,7 +414,7 @@ fn test_oauth_exchange_malformed_json() {
         last_url: Mutex::new(None),
     };
 
-    let res = Oauth2Client::exchange_code(&config, "code", &mock_client);
+    let res = Oauth2Client::exchange_code(&config, "code", &mock_client, None);
     assert!(
         res.is_err(),
         "Exchange should fail if response is invalid JSON"
@@ -419,7 +440,7 @@ fn test_oauth_exchange_http_error() {
         last_url: Mutex::new(None),
     };
 
-    let res = Oauth2Client::exchange_code(&config, "code", &mock_client);
+    let res = Oauth2Client::exchange_code(&config, "code", &mock_client, None);
     assert!(res.is_err(), "Exchange should fail if HTTP request fails");
     let err_msg = res.unwrap_err().to_string();
     assert!(err_msg.contains("Network failure"));

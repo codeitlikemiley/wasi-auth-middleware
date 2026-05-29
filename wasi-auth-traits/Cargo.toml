@@ -2,11 +2,21 @@
 name = "wasi-auth-traits"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Core abstractions and storage traits for the WASI Authentication Middleware."
+repository = "https://github.com/codeitlikemiley/wasi-auth-middleware"
+documentation = "https://docs.rs/wasi-auth-traits"
+keywords = ["wasi", "auth", "middleware", "jwt", "oauth"]
+categories = ["authentication", "wasm", "web-programming"]
+readme = "../README.md"
+authors = ["Enzo Nocera", "Uriah Galang"]
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+argon2 = { version = "0.5", optional = true }
+rand_core = { version = "0.6.4", features = ["getrandom"], optional = true }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "wasi"))'.dependencies]
 spin-sdk = { version = "3.0", optional = true }
@@ -18,8 +28,9 @@ futures = { version = "0.3", optional = true }
 ureq = { version = "2.9", features = ["json"], optional = true }
 
 [features]
-default = []
+default = ["hash-otp"]
 spin = ["spin-sdk"]
 sqlite = ["spin-sdk"]
 http-email = ["spin-sdk", "http", "bytes", "ureq", "futures"]
+hash-otp = ["dep:argon2", "dep:rand_core"]
 

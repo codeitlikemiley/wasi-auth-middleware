@@ -79,7 +79,8 @@ PiaaOSlHWGYMFgk/qw2exiuSUGcNC0VXpHfWsF6qwQKBgQDdhGLVPGbVq+Bi2jFs
 2oQ+qhTGbn1ntsvUHBohy1tgsHkwjwmWcyYmTselII7UZaKdpEHpdae8pZiNUJI7
 3O5z7M7WJLVZo4Re+VT7QDRorIPK3j5mox/gXAodgRVFvBWPqB+iv8S4LczQ5Bhg
 o0vxmPhL+yY1ST0AkFHlMi9HuA==
------END PRIVATE KEY-----"###.to_string();
+-----END PRIVATE KEY-----"###
+                .to_string();
             let jwks = r###"{"keys":[{"kty":"RSA","use":"sig","alg":"RS256","kid":"mock-key-id-1","n":"2bxEK2ut_C_QGwdC2Q9xNxEKeCDTcYPbmV60g0fFYQ4aX-5Pk3rY-O3qVjtCBaStYYlk3wjPN658D5VdQv0g_QvH1nOV6bGP4M5rT-fxdu8tXEJAblKjsvi0SDYpRkD261xFvNDdcRmP5lK8xpjsqcF4K0Q75rBfznWHjo2LyA_unmN9fmUK_YkJJaB1a31kWwTO9GvsJ8-y5kQNTP-4tZ6uTQRdxaiL8RT02nJv1MGyzHWNpxpS4EzJg9EGIRJuSw8ifX7d3OCWsHKrFQ_Bwk5m96SYqkHkDGGab6WQhOKs8rNJZG6kl8DO3KwJxK-q7CPp7EbOddpPDCLsomugAQ","e":"AQAB"}]}"###.to_string();
             (pem, jwks)
         }
@@ -111,7 +112,8 @@ qb89tNqXQR55QjXTsvf9r+eoHLc5mRCAFpnmEDECgYB+Hkr9vpr8Ii1TmIpzSsTo
 vxx6lQ4uKL7miL0wUkf8zC3L9iVEaVAkzeq3hFOV5fenyrlKi5/dmP/PCp3uG6kb
 nRvsma9VRtUgMzklxMebJD2IJm6Dqi2mfLMYUO3QCbH5pMts+TfZnj2ZLShc7C+Y
 4ejysSyVbFF7GfsIZa6sfg==
------END PRIVATE KEY-----"###.to_string();
+-----END PRIVATE KEY-----"###
+                .to_string();
             let jwks = r###"{"keys":[{"kty":"RSA","use":"sig","alg":"RS256","kid":"mock-key-id-2","n":"mzEki9o4gxpKmaV6FtjHDUDIpIGc_YdHKt9FA7JSHDhlA0oI4GnAZODg4it-5uGjNDoFFX3Fs8ji0x6LrAGikXm1Sltw8jAok-fYSmUL__ATHmp29fahUEs6Nk2ijz01OlDWuIgvEv6-G8mTlmVG2NXBRmZDVn9h5qZRlzmgcJUiHOnuVNCWVRHHxK2PqUhNZDoVs8fVEhm8-EzGqx-BTHHVvX3zwgc0x07HNiZPWrkq-JuRPhzQMdL313sPEIL43PTjIAjuVByH_dMQzjyMEv1Z3EdBLBnERmKtOhIh72dvbzpPPZx_pqly2iyoCXyDpDn2h4Covqh5TyFrGI5SZw","e":"AQAB"}]}"###.to_string();
             (pem, jwks)
         }
@@ -143,7 +145,8 @@ R9lMy9TBKo6Yj4l9lSXfDCWLv5Dlqn/0RTwjWsSqIwKBgBuWHw0XCtBRUBwZE2ik
 1jKhkIV+96Q3OIbN4Z8R22j/9BvHJVzPOTz8HBSf//vmpbx8pgM7lppwOJl/eWv3
 b31+HLsfP/ogUFY8ZORBbdVQlSkZ/ibGzNbX/Pzog1C7q2O5XsRvco8Vx03aNqr5
 gTUJMNT0fxsZk5bsUVPagTLj
------END PRIVATE KEY-----"###.to_string();
+-----END PRIVATE KEY-----"###
+                .to_string();
             let jwks = r###"{"keys":[{"kty":"RSA","use":"sig","alg":"RS256","kid":"invalid-kid","n":"tlu3RnBMV5Y16_VUpTXRKRM1mANDGr9P0gJWeWHiGDK1NxO77C3eF_BkOgd5Tmh2K0Db2c7QDRWhcZ4YObxgnlQGMn46_AIcvzHspWkXU0v91DhufyrUxxX97Zje2cAobrBz6eyCCNjhmfVuvQ2fzpsv7d-A3IU7A5bS6j8ozPhuZkCerT-dMs5JkIkWS1YxTwKMLM7RaBoylja3YkVcPFy9Ax2FzHO2f0l8EHrcI9d-Sxziwsi07wnqBlys4Pdfn_4ax8VjzC2s6KlYwGt-4pjp43G8OZ8c3Y9ttSPuxZctYJ8-zTdF4THr7j4g4sJsOwKvkNMDMhSaZosD1VVxcw","e":"AQAB"}]}"###.to_string();
             (pem, jwks)
         }
@@ -190,7 +193,7 @@ fn generate_mock_jwt(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn generate_mock_jwt(_private_key_pem: &str, _kid: &str) -> Result<String, String> {
+fn generate_mock_jwt(private_key_pem: &str, kid: &str) -> Result<String, String> {
     Ok("dummy_jwt".to_string())
 }
 

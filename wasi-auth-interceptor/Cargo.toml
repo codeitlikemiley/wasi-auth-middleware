@@ -2,15 +2,28 @@
 name = "wasi-auth-interceptor"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "WASI incoming-handler interceptor proxy for authentication header injection."
+repository = "https://github.com/codeitlikemiley/wasi-auth-middleware"
+documentation = "https://docs.rs/wasi-auth-interceptor"
+keywords = ["wasi", "auth", "middleware", "jwt", "interceptor"]
+categories = ["authentication", "wasm", "web-programming"]
+readme = "../README.md"
+authors = ["Enzo Nocera", "Uriah Galang"]
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-wasi-auth-core = { path = "../wasi-auth-core" }
-wit-bindgen = "0.24.0"
+wasi-auth-core = { version = "0.1.0", path = "../wasi-auth-core" }
+wit-bindgen = "0.33.0"
 serde.workspace = true
 serde_json.workspace = true
+toml = { version = "0.8", optional = true }
+
+[features]
+default = ["config-file"]
+config-file = ["dep:toml"]
 
 
 

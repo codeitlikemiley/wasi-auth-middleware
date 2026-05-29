@@ -348,10 +348,13 @@ pub async fn main_impl() -> Result<(), Box<dyn std::error::Error>> {
         .stderr(std::process::Stdio::inherit())
         .spawn()
         .context("Failed to spawn mock auth server")?;
-    
+
     std::thread::sleep(Duration::from_millis(500));
     if let Some(status) = mock_auth_child.try_wait()? {
-        println!("ERROR: mock-auth-server exited immediately with status: {:?}", status);
+        println!(
+            "ERROR: mock-auth-server exited immediately with status: {:?}",
+            status
+        );
     }
 
     let _mock_auth_guard = ChildGuard {
@@ -370,7 +373,10 @@ pub async fn main_impl() -> Result<(), Box<dyn std::error::Error>> {
 
     std::thread::sleep(Duration::from_millis(500));
     if let Some(status) = mock_email_child.try_wait()? {
-        println!("ERROR: mock-email-server exited immediately with status: {:?}", status);
+        println!(
+            "ERROR: mock-email-server exited immediately with status: {:?}",
+            status
+        );
     }
 
     let _mock_email_guard = ChildGuard {
@@ -424,19 +430,20 @@ mod tests {
         compile_targets(&workspace_root)?;
 
         // Let's test all WAC variations to find the working one!
-        let interceptor_wasm = workspace_root.join("target/wasm32-wasip2/debug/wasi_auth_interceptor.wasm");
+        let interceptor_wasm =
+            workspace_root.join("target/wasm32-wasip2/debug/wasi_auth_interceptor.wasm");
         let demo_wasm = workspace_root.join("target/wasm32-wasip2/debug/leptos_auth_demo.wasm");
-        
+
         let wac_variations = vec![
             (
-                "let demo = new root:component {}; let composed = new wasi:auth-interceptor { \"wasi:http/incoming-handler@0.2.4\": demo }; export composed;",
+                "let demo = new root:component {}; let composed = new wasi:auth-interceptor { \"wasi:http/incoming-handler@0.2.9\": demo }; export composed;",
                 vec![
                     ("wasi:auth-interceptor", interceptor_wasm.to_str().unwrap()),
                     ("root:component", demo_wasm.to_str().unwrap())
                 ]
             ),
             (
-                "let demo = new local:demo {}; let composed = new wasi:auth-interceptor { \"wasi:http/incoming-handler@0.2.4\": demo }; export composed;",
+                "let demo = new local:demo {}; let composed = new wasi:auth-interceptor { \"wasi:http/incoming-handler@0.2.9\": demo }; export composed;",
                 vec![
                     ("wasi:auth-interceptor", interceptor_wasm.to_str().unwrap()),
                     ("local:demo", demo_wasm.to_str().unwrap())
@@ -445,25 +452,38 @@ mod tests {
         ];
 
         for (idx, (wac_src, deps)) in wac_variations.iter().enumerate() {
-            let file_path = workspace_root.join(format!("target/wasm32-wasip2/debug/test_var_{}.wac", idx));
+            let file_path =
+                workspace_root.join(format!("target/wasm32-wasip2/debug/test_var_{}.wac", idx));
             let content = format!("package local:composition;\n\n{}", wac_src);
             std::fs::write(&file_path, content)?;
-            
-            let mut args = vec!["compose", file_path.to_str().unwrap(), "--import-dependencies"];
-            let dep_strs: Vec<String> = deps.iter().map(|(name, path)| format!("{}={}", name, path)).collect();
+
+            let mut args = vec![
+                "compose",
+                file_path.to_str().unwrap(),
+                "--import-dependencies",
+            ];
+            let dep_strs: Vec<String> = deps
+                .iter()
+                .map(|(name, path)| format!("{}={}", name, path))
+                .collect();
             for dep_str in &dep_strs {
                 args.push("--dep");
                 args.push(dep_str);
             }
             args.push("-o");
-            let out_wasm = workspace_root.join(format!("target/wasm32-wasip2/debug/out_var_{}.wasm", idx));
+            let out_wasm =
+                workspace_root.join(format!("target/wasm32-wasip2/debug/out_var_{}.wasm", idx));
             args.push(out_wasm.to_str().unwrap());
-            
+
             let res = Command::new("wac").args(&args).output()?;
             if res.status.success() {
                 println!(">>> VARIATION {} SUCCESS!", idx);
             } else {
-                println!(">>> VARIATION {} FAILED: {}", idx, String::from_utf8_lossy(&res.stderr));
+                println!(
+                    ">>> VARIATION {} FAILED: {}",
+                    idx,
+                    String::from_utf8_lossy(&res.stderr)
+                );
             }
             std::fs::remove_file(&file_path).ok();
             std::fs::remove_file(&out_wasm).ok();
@@ -555,8 +575,14 @@ mod tests {
             .output()?;
 
         println!("WAC PLUG STATUS: {:?}", output.status);
-        println!("WAC PLUG STDOUT: {}", String::from_utf8_lossy(&output.stdout));
-        println!("WAC PLUG STDERR: {}", String::from_utf8_lossy(&output.stderr));
+        println!(
+            "WAC PLUG STDOUT: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        println!(
+            "WAC PLUG STDERR: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         assert!(output.status.success(), "wac plug failed");
         Ok(())

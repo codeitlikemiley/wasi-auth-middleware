@@ -2,9 +2,17 @@
 name = "wasi-auth-core"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Core cryptographic, JWT token verification, and OAuth2 utilities for WASI."
+repository = "https://github.com/codeitlikemiley/wasi-auth-middleware"
+documentation = "https://docs.rs/wasi-auth-core"
+keywords = ["wasi", "auth", "middleware", "jwt", "oauth"]
+categories = ["authentication", "wasm", "web-programming"]
+readme = "../README.md"
+authors = ["Enzo Nocera", "Uriah Galang"]
 
 [dependencies]
-wasi-auth-traits = { path = "../wasi-auth-traits" }
+wasi-auth-traits = { version = "0.1.0", path = "../wasi-auth-traits" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -13,6 +21,8 @@ chrono.workspace = true
 base64.workspace = true
 rsa.workspace = true
 sha2.workspace = true
+sha1.workspace = true
+hmac.workspace = true
 urlencoding.workspace = true
 
 

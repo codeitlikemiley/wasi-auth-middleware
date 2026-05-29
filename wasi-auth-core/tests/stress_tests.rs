@@ -30,6 +30,9 @@ fn make_claims(exp: u64) -> Claims {
         iss: "test-issuer".to_string(),
         aud: "test-audience".to_string(),
         exp,
+        iat: 0,
+        nbf: None,
+        jti: None,
         roles: vec!["user".to_string()],
         name: Some("Test User".to_string()),
         email: Some("test@example.com".to_string()),
@@ -205,11 +208,11 @@ fn test_otp_expired() {
     // The verify_otp implementation uses SystemTime::now() which is dynamic,
     // but InMemoryStorage uses system clock. To ensure it expires, we check
     // verify_otp under normal conditions where now is much greater than 990.
-    let is_valid = verify_otp(email, "123456", &storage).unwrap();
+    let is_valid = verify_otp(email, "123456", &storage, None).unwrap();
     assert!(!is_valid, "Expired OTP must not be validated");
 
     // Verify it was cleaned up
-    let is_valid_again = verify_otp(email, "123456", &storage).unwrap();
+    let is_valid_again = verify_otp(email, "123456", &storage, None).unwrap();
     assert!(!is_valid_again);
 }
 
@@ -222,7 +225,7 @@ fn test_otp_empty_email() {
     storage.store_otp(email, "123456", 2000000000).unwrap();
 
     // Verify with empty email and correct OTP
-    let is_valid = verify_otp(email, "123456", &storage).unwrap();
+    let is_valid = verify_otp(email, "123456", &storage, None).unwrap();
     assert!(is_valid, "OTP for empty email should be valid if stored");
 }
 
@@ -234,11 +237,11 @@ fn test_otp_incorrect_otp() {
     storage.store_otp(email, "123456", 2000000000).unwrap();
 
     // Verify with incorrect OTP
-    let is_valid = verify_otp(email, "111111", &storage).unwrap();
+    let is_valid = verify_otp(email, "111111", &storage, None).unwrap();
     assert!(!is_valid, "Incorrect OTP should return false");
 
     // Verify that subsequent check with correct OTP fails (it got consumed)
-    let is_valid_correct = verify_otp(email, "123456", &storage).unwrap();
+    let is_valid_correct = verify_otp(email, "123456", &storage, None).unwrap();
     assert!(
         !is_valid_correct,
         "OTP must be consumed after first attempt even if incorrect"
@@ -255,7 +258,7 @@ fn test_otp_expiry_overflow_panic() {
     let email = "overflow@example.com";
 
     // expiry_duration_secs = u64::MAX will cause now + expiry_duration_secs to overflow
-    let res = send_and_store_otp(email, &storage, &sender, u64::MAX, 1000);
+    let res = send_and_store_otp(email, &storage, &sender, u64::MAX, 1000, None);
     assert!(res.is_err());
     assert!(res
         .unwrap_err()
@@ -276,7 +279,7 @@ fn test_oauth_auth_url_weird_redirect_uri() {
         redirect_uri: "https://my-app.com/callback?param=1&param=2".to_string(),
     };
 
-    let url = Oauth2Client::generate_auth_url(&config, "state with spaces", "scope1 scope2");
+    let url = Oauth2Client::generate_auth_url(&config, "state with spaces", "scope1 scope2", None);
 
     // Check that redirect_uri is URL-encoded
     assert!(
@@ -300,7 +303,7 @@ fn test_oauth_auth_url_query_merging() {
         redirect_uri: "https://my-app.com/callback".to_string(),
     };
 
-    let url = Oauth2Client::generate_auth_url(&config, "state", "scope");
+    let url = Oauth2Client::generate_auth_url(&config, "state", "scope", None);
 
     // Check that the existing query parameter is preserved and new ones are appended with '&'
     assert!(url.starts_with("https://provider.com/auth?partner=123&"));
@@ -352,7 +355,7 @@ fn test_oauth_exchange_code_invalid_json() {
         should_fail: false,
     };
 
-    let res = Oauth2Client::exchange_code(&config, "code123", &client);
+    let res = Oauth2Client::exchange_code(&config, "code123", &client, None);
     assert!(res.is_err(), "Should fail on invalid JSON response");
     let err = res.unwrap_err();
     assert!(err.to_string().contains("Failed to parse token response"));
@@ -374,7 +377,7 @@ fn test_oauth_exchange_code_http_failure() {
         should_fail: true,
     };
 
-    let res = Oauth2Client::exchange_code(&config, "code123", &client);
+    let res = Oauth2Client::exchange_code(&config, "code123", &client, None);
     assert!(res.is_err());
     let err = res.unwrap_err();
     assert!(err.to_string().contains("Network request failed"));

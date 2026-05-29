@@ -10,15 +10,19 @@ crate-type = ["cdylib"]
 [dependencies]
 leptos-wasi-auth = { path = "../../leptos-wasi-auth" }
 wasi-auth-core = { path = "../../wasi-auth-core" }
+wasi-auth-traits = { path = "../../wasi-auth-traits" }
+http = "1.1"
 wit-bindgen = "0.24.0"
 leptos = { version = "0.8.9", default-features = false, features = ["ssr"] }
 leptos_router = { version = "0.8.7", default-features = false, features = ["ssr"] }
 leptos_wasi = { path = "../../../leptos_wasi" }
-wasi = "0.13.1+wasi-0.2.0"
+wasi = "0.14.7"
+server_fn = { version = "0.8.7", default-features = false, features = ["axum-no-default"] }
+wasm-bindgen = "=0.2.103"
+wasm-streams = "=0.4.2"
 
 any_spawner = { version = "0.3.0", default-features = false, features = ["futures-executor"] }
 bytes = "1.7.2"
 serde.workspace = true
 serde_json.workspace = true
-http = "1.1"
 

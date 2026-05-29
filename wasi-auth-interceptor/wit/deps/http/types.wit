@@ -592,3 +592,9 @@ interface types {
     get: func() -> option<result<result<incoming-response, error-code>>>;
   }
 }
+
+interface incoming-handler {
+  use types.{incoming-request, response-outparam};
+
+  handle: func(request: incoming-request, response-out: response-outparam);
+}

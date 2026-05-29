@@ -1,12 +1,39 @@
 use crate::AuthError;
 
+/// [`EmailSender`](crate::EmailSender) implementation that delivers emails by
+/// sending an **HTTP POST** request to an external email service.
+///
+/// # JSON Payload
+///
+/// The request body is a JSON object with the following shape:
+///
+/// ```json
+/// {
+///   "to": "recipient@example.com",
+///   "subject": "Your OTP code",
+///   "body": "Your code is 123456"
+/// }
+/// ```
+///
+/// The `Content-Type` header is set to `application/json`.
+///
+/// # Platform Differences
+///
+/// | Target | HTTP client used |
+/// |--------|------------------|
+/// | `wasm32-wasi` | Spin SDK outbound HTTP (`spin_sdk::http::send`) |
+/// | Native | [`ureq`](https://docs.rs/ureq) with a 10-second timeout |
+///
+/// Requires the `http-email` feature flag.
 #[cfg(feature = "http-email")]
 pub struct HttpEmail {
+    /// URL of the email delivery service endpoint.
     service_url: String,
 }
 
 #[cfg(feature = "http-email")]
 impl HttpEmail {
+    /// Creates a new `HttpEmail` that will POST email payloads to `service_url`.
     pub fn new(service_url: String) -> Self {
         Self { service_url }
     }

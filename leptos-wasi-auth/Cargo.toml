@@ -2,9 +2,17 @@
 name = "leptos-wasi-auth"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Leptos integration and cookie helpers for the WASI Authentication Middleware."
+repository = "https://github.com/codeitlikemiley/wasi-auth-middleware"
+documentation = "https://docs.rs/leptos-wasi-auth"
+keywords = ["wasi", "auth", "middleware", "jwt", "leptos"]
+categories = ["authentication", "wasm", "web-programming"]
+readme = "../README.md"
+authors = ["Enzo Nocera", "Uriah Galang"]
 
 [dependencies]
-wasi-auth-core = { path = "../wasi-auth-core" }
+wasi-auth-core = { version = "0.1.0", path = "../wasi-auth-core" }
 serde.workspace = true
 serde_json.workspace = true
 leptos = { version = "0.8.9", default-features = false, optional = true }
@@ -21,3 +29,5 @@ leptos = ["dep:leptos"]
 [dev-dependencies]
 rsa = { workspace = true }
 rand = { workspace = true }
+sha1 = { workspace = true }
+hmac = { workspace = true }

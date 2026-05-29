@@ -1,0 +1,28 @@
+[package]
+name = "wasi-auth-providers"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Ready-to-use OAuth2 provider presets for the WASI Authentication Middleware."
+repository = "https://github.com/codeitlikemiley/wasi-auth-middleware"
+documentation = "https://docs.rs/wasi-auth-providers"
+keywords = ["wasi", "auth", "middleware", "oauth2", "google"]
+categories = ["authentication", "wasm", "web-programming"]
+readme = "../README.md"
+authors = ["Enzo Nocera", "Uriah Galang"]
+
+[dependencies]
+wasi-auth-core = { version = "0.1.0", path = "../wasi-auth-core" }
+serde = { workspace = true }
+
+[features]
+default = []
+google = []
+github = []
+apple = []
+microsoft = []
+facebook = []
+discord = []
+x = []
+keycloak = []
+all = ["google", "github", "apple", "microsoft", "facebook", "discord", "x", "keycloak"]
