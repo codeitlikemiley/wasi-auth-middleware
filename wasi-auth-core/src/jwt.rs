@@ -350,10 +350,9 @@ impl JwksKeyCache {
         client: &impl crate::oauth::HttpClient,
     ) -> Result<Option<RsaPublicKey>, AuthError> {
         {
-            let map = self
-                .keys
-                .read()
-                .map_err(|e| AuthError::Crypto(format!("Failed to acquire read lock on keys: {}", e)))?;
+            let map = self.keys.read().map_err(|e| {
+                AuthError::Crypto(format!("Failed to acquire read lock on keys: {}", e))
+            })?;
             if let Some(key) = map.get(kid) {
                 return Ok(Some(key.clone()));
             }
@@ -365,10 +364,12 @@ impl JwksKeyCache {
             .unwrap_or(0);
 
         {
-            let mut last_fetch = self
-                .last_fetched
-                .write()
-                .map_err(|e| AuthError::Crypto(format!("Failed to acquire write lock on last_fetched: {}", e)))?;
+            let mut last_fetch = self.last_fetched.write().map_err(|e| {
+                AuthError::Crypto(format!(
+                    "Failed to acquire write lock on last_fetched: {}",
+                    e
+                ))
+            })?;
             if now.saturating_sub(*last_fetch) < self.cooldown_secs {
                 // Fetch cooldown active, return None immediately to avoid outbound HTTP DoS
                 return Ok(None);
@@ -396,16 +397,14 @@ impl JwksKeyCache {
         let jwks: JwksJson = serde_json::from_str(&jwks_json)
             .map_err(|e| AuthError::Crypto(format!("Failed to parse JWKS JSON: {}", e)))?;
 
-        let mut map = self
-            .keys
-            .write()
-            .map_err(|e| AuthError::Crypto(format!("Failed to acquire write lock on keys: {}", e)))?;
+        let mut map = self.keys.write().map_err(|e| {
+            AuthError::Crypto(format!("Failed to acquire write lock on keys: {}", e))
+        })?;
         for jwk in jwks.keys {
             if jwk.kty == "RSA" {
-                if let (Ok(n_bytes), Ok(e_bytes)) = (
-                    base64_url_decode(&jwk.n),
-                    base64_url_decode(&jwk.e),
-                ) {
+                if let (Ok(n_bytes), Ok(e_bytes)) =
+                    (base64_url_decode(&jwk.n), base64_url_decode(&jwk.e))
+                {
                     let n = rsa::BigUint::from_bytes_be(&n_bytes);
                     let e = rsa::BigUint::from_bytes_be(&e_bytes);
                     if let Ok(pub_key) = RsaPublicKey::new(n, e) {
@@ -639,7 +638,12 @@ mod tests {
         }
 
         impl crate::oauth::HttpClient for MockJwkHttpClient {
-            fn post(&self, _url: &str, _headers: &[(&str, &str)], _body: &str) -> Result<String, AuthError> {
+            fn post(
+                &self,
+                _url: &str,
+                _headers: &[(&str, &str)],
+                _body: &str,
+            ) -> Result<String, AuthError> {
                 unimplemented!()
             }
 
@@ -687,11 +691,17 @@ mod tests {
             count: std::sync::atomic::AtomicUsize,
         }
         impl crate::oauth::HttpClient for CounterHttpClient {
-            fn post(&self, _url: &str, _headers: &[(&str, &str)], _body: &str) -> Result<String, AuthError> {
+            fn post(
+                &self,
+                _url: &str,
+                _headers: &[(&str, &str)],
+                _body: &str,
+            ) -> Result<String, AuthError> {
                 unimplemented!()
             }
             fn get(&self, _url: &str, _headers: &[(&str, &str)]) -> Result<String, AuthError> {
-                self.count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 Ok(r#"{"keys": []}"#.to_string())
             }
         }
