@@ -1,46 +1,65 @@
 //! Run this example with:
 //! cargo run --example oauth -p wasi-auth-core
 
-use wasi_auth_core::oauth::{OAuthConfig, Oauth2Client, PkceChallenge};
+use wasi_auth_core::oauth::{Oauth2Client, PkceChallenge};
 
 fn main() {
     println!("=======================================================");
     println!("               WASI OAuth2/PKCE Example                 ");
     println!("=======================================================\n");
 
-    // 1. Define configuration preset for Google
-    let config = OAuthConfig {
-        client_id: "google-client-id-xyz".to_string(),
-        client_secret: "google-client-secret-123".to_string(),
-        auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
-        token_url: "https://oauth2.googleapis.com/token".to_string(),
-        userinfo_url: Some("https://openidconnect.googleapis.com/v1/userinfo".to_string()),
-        redirect_uri: "https://my-app.com/login/callback".to_string(),
-    };
+    println!("This example demonstrates how to configure OAuth2 parameters and generate");
+    println!("secure authentication request flows using pre-defined social presets:\n");
 
-    println!("1. OAuth2 Client Configuration loaded:");
-    println!("   Client ID:    {}", config.client_id);
-    println!("   Redirect URI: {}\n", config.redirect_uri);
+    let client_id = "demo-client-id";
+    let client_secret = "demo-client-secret";
+    let redirect_uri = "https://my-app.com/login/callback";
 
-    // 2. Generate PKCE Challenge
-    println!("2. Generating PKCE Challenge (Proof Key for Code Exchange)...");
+    // 1. Google Preset
+    println!("1. Loading Google OAuth2 Preset Configuration...");
+    let google_config = wasi_auth_providers::google::google(client_id, client_secret, redirect_uri);
+    println!("   Google Auth URL:  {}", google_config.auth_url);
+    println!("   Google Token URL: {}\n", google_config.token_url);
+
+    // 2. GitHub Preset
+    println!("2. Loading GitHub OAuth2 Preset Configuration...");
+    let github_config = wasi_auth_providers::github::github(client_id, client_secret, redirect_uri);
+    println!("   GitHub Auth URL:  {}", github_config.auth_url);
+    println!("   GitHub Token URL: {}\n", github_config.token_url);
+
+    // 3. Keycloak Preset (custom realm)
+    println!("3. Loading Keycloak OIDC Preset Configuration...");
+    let keycloak_config = wasi_auth_providers::keycloak::keycloak(
+        client_id,
+        client_secret,
+        redirect_uri,
+        "https://keycloak.my-org.com",
+        "custom-realm",
+    );
+    println!("   Keycloak Auth URL:  {}", keycloak_config.auth_url);
+    println!("   Keycloak Token URL: {}\n", keycloak_config.token_url);
+
+    // 4. Generate PKCE Challenge
+    println!("4. Generating PKCE Challenge (Proof Key for Code Exchange)...");
     let pkce = PkceChallenge::generate();
     println!("   Code Verifier:  {}", pkce.code_verifier);
     println!("   Code Challenge: {}\n", pkce.code_challenge);
 
-    // 3. Generate Authorization Redirect URL
-    println!("3. Generating Authorization Redirect URL...");
+    // 5. Generate Authorization Redirect URL (using Google preset as example)
+    println!("5. Generating Authorization Redirect URL for Google Sign-In...");
     let scope = "openid email profile";
     let state = "secure-random-state-string";
-    let auth_url = Oauth2Client::generate_auth_url(&config, state, scope, Some(&pkce));
+    let auth_url = Oauth2Client::generate_auth_url(&google_config, state, scope, Some(&pkce));
 
     println!("   Redirect the client's browser to:\n   {}\n", auth_url);
-    println!("4. Exchange flow info:");
+    println!("6. Exchange flow info:");
     println!(
         "   Once the user authorizes and redirects back to your callback with a `code` query parameter,"
     );
     println!(
         "   you perform the token exchange on the server side using the stored `code_verifier`:"
     );
-    println!("   `Oauth2Client::exchange_code(&config, code, Some(&verifier), &http_client)`\n");
+    println!(
+        "   `Oauth2Client::exchange_code(&google_config, code, Some(&verifier), &http_client)`\n"
+    );
 }

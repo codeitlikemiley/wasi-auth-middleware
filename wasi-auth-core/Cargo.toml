@@ -26,3 +26,4 @@ hmac.workspace = true
 urlencoding.workspace = true
 [dev-dependencies]
 wasi-auth-traits = { path = "../wasi-auth-traits", features = ["spin", "sqlite", "http-email"] }
+wasi-auth-providers = { path = "../wasi-auth-providers", features = ["all"] }
