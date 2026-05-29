@@ -25,13 +25,13 @@ example name:
     # Normalize dashes to underscores
     name_clean=$(echo "{{name}}" | tr '-' '_')
     case "$name_clean" in
-        "totp" | "magic_link" | "oauth" | "otp")
+        "totp" | "magic_link" | "oauth" | "otp" | "storage_backends")
             echo "Running $name_clean example..."
             cargo run --example "$name_clean" -p wasi-auth-core
             ;;
         *)
             echo "Error: Example '${name_clean}' not found."
-            echo "Available examples: totp, magic_link, oauth, otp"
+            echo "Available examples: totp, magic_link, oauth, otp, storage_backends"
             exit 1
             ;;
     esac

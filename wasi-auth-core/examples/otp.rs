@@ -12,13 +12,13 @@ fn main() {
     let email = "user@example.com";
     let storage = InMemoryStorage::new();
     // In this example, we use StdoutEmail which outputs the email content to stdout.
-    // In production, you can enable the "http-email" feature and use HttpEmail to post email payloads 
+    // In production, you can enable the "http-email" feature and use HttpEmail to post email payloads
     // to your external email APIs (like SendGrid, Mailgun, AWS SES, or a custom microservice):
     //
     // #[cfg(feature = "http-email")]
     // let sender = wasi_auth_traits::HttpEmail::new("https://your-email-service.com/send".to_string());
     let sender = StdoutEmail::new();
-    
+
     // 10-second window, limit 2 attempts
     let limiter = InMemoryRateLimiter::new(10, 2);
 
