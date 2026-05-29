@@ -441,15 +441,15 @@ mod tests {
                 "let demo = new root:component {}; let composed = new wasi:auth-interceptor { \"wasi:http/incoming-handler@0.2.9\": demo }; export composed;",
                 vec![
                     ("wasi:auth-interceptor", interceptor_wasm.to_str().unwrap()),
-                    ("root:component", demo_wasm.to_str().unwrap())
-                ]
+                    ("root:component", demo_wasm.to_str().unwrap()),
+                ],
             ),
             (
                 "let demo = new local:demo {}; let composed = new wasi:auth-interceptor { \"wasi:http/incoming-handler@0.2.9\": demo }; export composed;",
                 vec![
                     ("wasi:auth-interceptor", interceptor_wasm.to_str().unwrap()),
-                    ("local:demo", demo_wasm.to_str().unwrap())
-                ]
+                    ("local:demo", demo_wasm.to_str().unwrap()),
+                ],
             ),
         ];
 

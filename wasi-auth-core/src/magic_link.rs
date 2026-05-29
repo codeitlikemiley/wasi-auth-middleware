@@ -3,9 +3,9 @@
 //! Reuses the RS256 JWT engine to sign a single-use, short-lived token.
 //! Revocation and replay prevention are managed by blacklisting the token's JTI.
 
-use crate::jwt::{generate_jwt, verify_jwt, Claims};
-use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+use crate::jwt::{Claims, generate_jwt, verify_jwt};
 use base64::Engine;
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wasi_auth_traits::{AuthError, AuthStorage};

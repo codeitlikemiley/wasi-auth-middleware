@@ -158,7 +158,7 @@ fn generate_mock_jwt(
     private_key_pem: &str,
     kid: &str,
 ) -> Result<String, jsonwebtoken::errors::Error> {
-    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 
     #[derive(serde::Serialize)]
     struct Claims {
@@ -507,18 +507,21 @@ fn parse_query(query: &str) -> HashMap<String, String> {
 
 pub fn main_impl() -> Result<(), Box<dyn std::error::Error>> {
     let mut port = 8080;
-    if let Some(arg) = std::env::args().nth(1) {
-        if let Ok(p) = arg.parse::<u16>() {
-            port = p;
-        }
-    } else if let Ok(p_str) = std::env::var("PORT") {
-        if let Ok(p) = p_str.parse::<u16>() {
-            port = p;
-        }
-    } else if let Ok(p_str) = std::env::var("MOCK_AUTH_PORT") {
-        if let Ok(p) = p_str.parse::<u16>() {
-            port = p;
-        }
+    if let Some(p) = std::env::args()
+        .nth(1)
+        .and_then(|arg| arg.parse::<u16>().ok())
+    {
+        port = p;
+    } else if let Some(p) = std::env::var("PORT")
+        .ok()
+        .and_then(|p_str| p_str.parse::<u16>().ok())
+    {
+        port = p;
+    } else if let Some(p) = std::env::var("MOCK_AUTH_PORT")
+        .ok()
+        .and_then(|p_str| p_str.parse::<u16>().ok())
+    {
+        port = p;
     }
 
     // Initialize state
@@ -656,7 +659,11 @@ mod tests {
         // 5. Test POST /email/send
         let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port)).unwrap();
         let email_req = r#"{"to":"bob@example.com","subject":"Your OTP","body":"Hello! Your code is 556677. Thank you!"}"#;
-        let req_headers = format!("POST /email/send HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", email_req.len(), email_req);
+        let req_headers = format!(
+            "POST /email/send HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            email_req.len(),
+            email_req
+        );
         stream.write_all(req_headers.as_bytes()).unwrap();
         let mut response = String::new();
         stream.read_to_string(&mut response).unwrap();

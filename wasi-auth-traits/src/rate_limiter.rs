@@ -127,25 +127,33 @@ mod tests {
         let limiter = InMemoryRateLimiter::default(); // default limits: send_otp = 5, verify_otp = 10
 
         for _ in 0..5 {
-            assert!(limiter
-                .check_rate_limit("user@test.com", "send_otp")
-                .unwrap());
+            assert!(
+                limiter
+                    .check_rate_limit("user@test.com", "send_otp")
+                    .unwrap()
+            );
             limiter.record_action("user@test.com", "send_otp").unwrap();
         }
-        assert!(!limiter
-            .check_rate_limit("user@test.com", "send_otp")
-            .unwrap());
+        assert!(
+            !limiter
+                .check_rate_limit("user@test.com", "send_otp")
+                .unwrap()
+        );
 
         for _ in 0..10 {
-            assert!(limiter
-                .check_rate_limit("user@test.com", "verify_otp")
-                .unwrap());
+            assert!(
+                limiter
+                    .check_rate_limit("user@test.com", "verify_otp")
+                    .unwrap()
+            );
             limiter
                 .record_action("user@test.com", "verify_otp")
                 .unwrap();
         }
-        assert!(!limiter
-            .check_rate_limit("user@test.com", "verify_otp")
-            .unwrap());
+        assert!(
+            !limiter
+                .check_rate_limit("user@test.com", "verify_otp")
+                .unwrap()
+        );
     }
 }

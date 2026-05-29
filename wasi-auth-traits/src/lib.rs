@@ -222,8 +222,8 @@ pub use http_email::HttpEmail;
 #[cfg(feature = "hash-otp")]
 pub fn hash_otp(otp: &str) -> Result<String, AuthError> {
     use argon2::{
-        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
         Argon2,
+        password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
     };
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
@@ -237,7 +237,7 @@ pub fn hash_otp(otp: &str) -> Result<String, AuthError> {
 /// Verify an OTP against an Argon2 hash.
 #[cfg(feature = "hash-otp")]
 pub fn verify_otp_hash(otp: &str, hashed_otp: &str) -> bool {
-    use argon2::{password_hash::PasswordVerifier, Argon2, PasswordHash};
+    use argon2::{Argon2, PasswordHash, password_hash::PasswordVerifier};
     let parsed_hash = match PasswordHash::new(hashed_otp) {
         Ok(h) => h,
         Err(_) => return false,

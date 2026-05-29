@@ -102,10 +102,10 @@ impl AuthStorage for InMemoryStorage {
             .sessions
             .write()
             .map_err(|e| AuthError::Storage(e.to_string()))?;
-        if let Some(session) = sessions.get(session_id) {
-            if session.expires_at < now {
-                sessions.remove(session_id);
-            }
+        if let Some(session) = sessions.get(session_id)
+            && session.expires_at < now
+        {
+            sessions.remove(session_id);
         }
         Ok(None)
     }
@@ -221,10 +221,10 @@ impl AuthStorage for InMemoryStorage {
             .blacklisted_jtis
             .write()
             .map_err(|e| AuthError::Storage(e.to_string()))?;
-        if let Some(&expires_at) = blacklisted.get(jti) {
-            if expires_at < now {
-                blacklisted.remove(jti);
-            }
+        if let Some(&expires_at) = blacklisted.get(jti)
+            && expires_at < now
+        {
+            blacklisted.remove(jti);
         }
         Ok(false)
     }

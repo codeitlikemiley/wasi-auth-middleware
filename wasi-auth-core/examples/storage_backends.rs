@@ -50,7 +50,9 @@ fn main() {
             println!("   ⚠️  INFO (Expected Native Behavior):");
             println!("      Store operation returned: {}", e);
             println!("      Reason: Spin KV store APIs are only available when running inside the");
-            println!("              Spin/Wasmtime WebAssembly runtime environment compiled for wasm32-wasi.");
+            println!(
+                "              Spin/Wasmtime WebAssembly runtime environment compiled for wasm32-wasi."
+            );
         }
     }
     println!();
@@ -82,7 +84,9 @@ fn main() {
             println!("   ⚠️  INFO (Expected Native Behavior):");
             println!("      Store operation returned: {}", e);
             println!("      Reason: Spin SQLite APIs are only available when running inside the");
-            println!("              Spin/Wasmtime WebAssembly runtime environment compiled for wasm32-wasi.");
+            println!(
+                "              Spin/Wasmtime WebAssembly runtime environment compiled for wasm32-wasi."
+            );
         }
     }
     println!("\n=======================================================");

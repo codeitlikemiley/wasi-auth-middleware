@@ -1,4 +1,4 @@
-use wasi_auth_core::jwt::{base64_url_encode, generate_jwt, verify_jwt, Claims};
+use wasi_auth_core::jwt::{Claims, base64_url_encode, generate_jwt, verify_jwt};
 use wasi_auth_core::oauth::{HttpClient, OAuthConfig, Oauth2Client};
 use wasi_auth_core::otp::{send_and_store_otp, verify_otp};
 use wasi_auth_core::{AuthError, AuthStorage, InMemoryStorage, StdoutEmail};
@@ -260,10 +260,11 @@ fn test_otp_expiry_overflow_panic() {
     // expiry_duration_secs = u64::MAX will cause now + expiry_duration_secs to overflow
     let res = send_and_store_otp(email, &storage, &sender, u64::MAX, 1000, None);
     assert!(res.is_err());
-    assert!(res
-        .unwrap_err()
-        .to_string()
-        .contains("OTP expiry time overflow"));
+    assert!(
+        res.unwrap_err()
+            .to_string()
+            .contains("OTP expiry time overflow")
+    );
 }
 
 // ----------------- OAuth2 Engine Stress Tests -----------------
@@ -402,7 +403,8 @@ fn test_oauth_get_user_info_invalid_json() {
     let res = Oauth2Client::get_user_info(&config, "token123", &client);
     assert!(res.is_err());
     let err = res.unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("Failed to parse userinfo response"));
+    assert!(
+        err.to_string()
+            .contains("Failed to parse userinfo response")
+    );
 }

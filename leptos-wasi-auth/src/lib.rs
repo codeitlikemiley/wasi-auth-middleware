@@ -55,9 +55,9 @@
 use http::request::Parts;
 #[cfg(any(feature = "ssr", feature = "hydrate", feature = "csr"))]
 use leptos::prelude::*;
-use wasi_auth_core::jwt::verify_jwt_with_options;
 #[cfg(any(feature = "unsafe-dev-fallback", test))]
 use wasi_auth_core::jwt::Claims;
+use wasi_auth_core::jwt::verify_jwt_with_options;
 use wasi_auth_core::{AuthError, AuthStorage};
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -224,37 +224,36 @@ pub fn extract_session_from_parts_with_options<S: AuthStorage>(
     options: &wasi_auth_core::jwt::ValidationOptions,
 ) -> Result<Option<UserSession>, AuthError> {
     // 1. Interceptor/Gateway Mode: Check X-User-Id and X-User-Roles headers first
-    if is_trust_proxy_headers() {
-        if let Some(user_id_val) = parts.headers.get("x-user-id") {
-            if let Ok(user_id) = user_id_val.to_str() {
-                let roles = parts
-                    .headers
-                    .get("x-user-roles")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.split(',').map(|r| r.to_string()).collect())
-                    .unwrap_or_default();
-                let roles = sanitize_roles(roles);
+    if is_trust_proxy_headers()
+        && let Some(user_id_val) = parts.headers.get("x-user-id")
+        && let Ok(user_id) = user_id_val.to_str()
+    {
+        let roles = parts
+            .headers
+            .get("x-user-roles")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.split(',').map(|r| r.to_string()).collect())
+            .unwrap_or_default();
+        let roles = sanitize_roles(roles);
 
-                let email = parts
-                    .headers
-                    .get("x-user-email")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string());
+        let email = parts
+            .headers
+            .get("x-user-email")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
 
-                let name = parts
-                    .headers
-                    .get("x-user-name")
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string());
+        let name = parts
+            .headers
+            .get("x-user-name")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
 
-                return Ok(Some(UserSession {
-                    user_id: user_id.to_string(),
-                    roles,
-                    email,
-                    name,
-                }));
-            }
-        }
+        return Ok(Some(UserSession {
+            user_id: user_id.to_string(),
+            roles,
+            email,
+            name,
+        }));
     }
 
     // 2. Library/Direct Mode: Extract JWT from Cookie or Authorization header
@@ -297,12 +296,12 @@ pub fn extract_session_from_parts_with_options<S: AuthStorage>(
         let claims = verify_jwt_with_options(&token, pub_key, aud, iss, now, options)?;
 
         // If a storage backend is provided, verify session is active
-        if let Some(store) = storage {
-            if store.get_session(&token)?.is_none() {
-                return Err(AuthError::Crypto(
-                    "Session revoked or not found in storage".to_string(),
-                ));
-            }
+        if let Some(store) = storage
+            && store.get_session(&token)?.is_none()
+        {
+            return Err(AuthError::Crypto(
+                "Session revoked or not found in storage".to_string(),
+            ));
         }
 
         let roles = sanitize_roles(claims.roles);
@@ -320,12 +319,12 @@ pub fn extract_session_from_parts_with_options<S: AuthStorage>(
                 "WARNING: Running in unsafe-dev-fallback mode! Token signatures are not verified."
             );
             // Ensure the token storage lookup is always executed if storage is provided, even in dev mode unverified fallback.
-            if let Some(store) = storage {
-                if store.get_session(&token)?.is_none() {
-                    return Err(AuthError::Crypto(
-                        "Session revoked or not found in storage".to_string(),
-                    ));
-                }
+            if let Some(store) = storage
+                && store.get_session(&token)?.is_none()
+            {
+                return Err(AuthError::Crypto(
+                    "Session revoked or not found in storage".to_string(),
+                ));
             }
 
             // No verification key configured, just parse claims without verification (Unsafe - Dev/Testing only!)
@@ -728,7 +727,7 @@ mod tests {
         let _lock = TEST_MUTEX.lock().unwrap();
         set_trust_proxy_headers(false);
         // Clear environment variable just in case it is set
-        std::env::remove_var("TRUST_PROXY_HEADERS");
+        unsafe { std::env::remove_var("TRUST_PROXY_HEADERS") };
 
         let (parts, _) = Request::builder()
             .header("x-user-id", "alice123")
@@ -751,7 +750,7 @@ mod tests {
 
         // Test with TRUST_PROXY_HEADERS
         set_trust_proxy_headers(false);
-        std::env::set_var("TRUST_PROXY_HEADERS", "1");
+        unsafe { std::env::set_var("TRUST_PROXY_HEADERS", "1") };
 
         let (parts, _) = Request::builder()
             .header("x-user-id", "alice123")
@@ -763,11 +762,11 @@ mod tests {
         let storage: Option<&InMemoryStorage> = None;
         let session = extract_session_from_parts(&parts, storage, None, None, None).unwrap();
         assert!(session.is_some());
-        std::env::remove_var("TRUST_PROXY_HEADERS");
+        unsafe { std::env::remove_var("TRUST_PROXY_HEADERS") };
 
         // Test with WASI_AUTH_TRUST_PROXY_HEADERS
         set_trust_proxy_headers(false);
-        std::env::set_var("WASI_AUTH_TRUST_PROXY_HEADERS", "true");
+        unsafe { std::env::set_var("WASI_AUTH_TRUST_PROXY_HEADERS", "true") };
 
         let (parts2, _) = Request::builder()
             .header("x-user-id", "bob123")
@@ -778,7 +777,7 @@ mod tests {
 
         let session2 = extract_session_from_parts(&parts2, storage, None, None, None).unwrap();
         assert!(session2.is_some());
-        std::env::remove_var("WASI_AUTH_TRUST_PROXY_HEADERS");
+        unsafe { std::env::remove_var("WASI_AUTH_TRUST_PROXY_HEADERS") };
     }
 
     // Test role matching and sanitization
@@ -1345,7 +1344,10 @@ mod tests {
         );
 
         let clear_cookie = build_clear_cookie_header(&options);
-        assert_eq!(clear_cookie, "__Host-jwt=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/");
+        assert_eq!(
+            clear_cookie,
+            "__Host-jwt=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/"
+        );
 
         let custom_options = CookieOptions {
             name: "session_id".to_string(),
@@ -1403,8 +1405,8 @@ mod tests {
 
         // Test Magic Link helpers
         let mut rng = rand::thread_rng();
-        use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
         use rsa::RsaPrivateKey;
+        use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
         let private_key = RsaPrivateKey::new(&mut rng, 512).unwrap();
         let public_key = rsa::RsaPublicKey::from(&private_key);
         let private_key_pem = private_key

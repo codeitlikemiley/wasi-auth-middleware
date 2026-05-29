@@ -1,7 +1,8 @@
 [package]
 name = "wasi-auth-interceptor"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.93.0"
 license = "MIT OR Apache-2.0"
 description = "WASI incoming-handler interceptor proxy for authentication header injection."
 repository = "https://github.com/codeitlikemiley/wasi-auth-middleware"

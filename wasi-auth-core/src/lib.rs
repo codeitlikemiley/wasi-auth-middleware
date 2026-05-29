@@ -31,7 +31,7 @@ pub mod otp;
 pub mod totp;
 
 pub use jwt::{
-    extract_kid, generate_jwt, verify_jwt, verify_jwt_with_options, Claims, ValidationOptions,
+    Claims, ValidationOptions, extract_kid, generate_jwt, verify_jwt, verify_jwt_with_options,
 };
 pub use magic_link::{generate_magic_link, verify_magic_link};
 pub use oauth::{HttpClient, OAuthConfig, Oauth2Client, TokenResponse, UserInfo};

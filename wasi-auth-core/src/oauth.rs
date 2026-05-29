@@ -113,8 +113,8 @@ impl PkceChallenge {
         hasher.update(code_verifier.as_bytes());
         let hash_result = hasher.finalize();
 
-        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
         use base64::Engine;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
         let code_challenge = URL_SAFE_NO_PAD.encode(hash_result);
 
         Self {
@@ -384,9 +384,10 @@ mod tests {
         assert_eq!(token_resp.access_token, "t123");
 
         let req = mock_client.last_request.lock().unwrap().clone().unwrap();
-        assert!(req
-            .2
-            .contains(&format!("code_verifier={}", challenge.code_verifier)));
+        assert!(
+            req.2
+                .contains(&format!("code_verifier={}", challenge.code_verifier))
+        );
     }
 
     #[test]

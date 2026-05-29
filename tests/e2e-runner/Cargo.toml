@@ -1,7 +1,8 @@
 [package]
 name = "e2e-runner"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.93.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["full"] }

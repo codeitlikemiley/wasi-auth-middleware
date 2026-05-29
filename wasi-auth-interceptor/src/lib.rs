@@ -59,6 +59,7 @@
 //!    - All other methods → **302 Redirect** to `/login`.
 
 #![allow(clippy::missing_safety_doc)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 pub mod config;
 
@@ -137,29 +138,26 @@ impl exports::wasi::http::incoming_handler::Guest for Interceptor {
         let mut token = None;
 
         // Try to get token from Cookie (6 precedence levels)
+        // Try to get token from Cookie (6 precedence levels)
         if let Some(cookies) =
             get_header_value(&headers, "cookie").or_else(|| get_header_value(&headers, "Cookie"))
-        {
-            if let Some(t) = extract_cookie(&cookies, "__Host-jwt")
+            && let Some(t) = extract_cookie(&cookies, "__Host-jwt")
                 .or_else(|| extract_cookie(&cookies, "__Host-session"))
                 .or_else(|| extract_cookie(&cookies, "__Secure-jwt"))
                 .or_else(|| extract_cookie(&cookies, "__Secure-session"))
                 .or_else(|| extract_cookie(&cookies, "jwt"))
                 .or_else(|| extract_cookie(&cookies, "session"))
-            {
-                token = Some(t);
-            }
+        {
+            token = Some(t);
         }
 
         // Try to get token from Authorization: Bearer <token>
-        if token.is_none() {
-            if let Some(auth_val) = get_header_value(&headers, "authorization")
+        if token.is_none()
+            && let Some(auth_val) = get_header_value(&headers, "authorization")
                 .or_else(|| get_header_value(&headers, "Authorization"))
-            {
-                if let Some(t) = auth_val.strip_prefix("Bearer ") {
-                    token = Some(t.to_string());
-                }
-            }
+            && let Some(t) = auth_val.strip_prefix("Bearer ")
+        {
+            token = Some(t.to_string());
         }
 
         let mut authenticated_session = None;

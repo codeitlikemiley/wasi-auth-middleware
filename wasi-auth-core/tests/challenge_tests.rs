@@ -1,7 +1,7 @@
-use wasi_auth_core::jwt::{base64_url_encode, generate_jwt, verify_jwt, Claims};
+use wasi_auth_core::AuthError;
+use wasi_auth_core::jwt::{Claims, base64_url_encode, generate_jwt, verify_jwt};
 use wasi_auth_core::oauth::{HttpClient, OAuthConfig, Oauth2Client};
 use wasi_auth_core::otp::{send_and_store_otp, verify_otp};
-use wasi_auth_core::AuthError;
 use wasi_auth_traits::{AuthStorage, InMemoryStorage, StdoutEmail};
 
 use rsa::pkcs8::EncodePrivateKey;
@@ -270,7 +270,10 @@ fn test_otp_expired() {
     // So if std::time::SystemTime::now() is greater than expires_at (which is 100000), it will fail.
     // That means storing with an arbitrary timestamp "100000" in the past makes it expired instantly compared to SystemTime::now().
     let verify_now = verify_otp(email, &otp, &storage, None).unwrap();
-    assert!(!verify_now, "Verification at a past time (100000) relative to SystemTime::now() should fail (be treated as expired)");
+    assert!(
+        !verify_now,
+        "Verification at a past time (100000) relative to SystemTime::now() should fail (be treated as expired)"
+    );
 }
 
 #[test]

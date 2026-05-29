@@ -171,10 +171,12 @@ mod tests {
         let _ = verify_otp(email, &otp2, &storage, Some(&verify_limiter)).unwrap();
         let err_verify = verify_otp(email, "000000", &storage, Some(&verify_limiter));
         assert!(err_verify.is_err());
-        assert!(err_verify
-            .unwrap_err()
-            .to_string()
-            .contains("Rate limit exceeded"));
+        assert!(
+            err_verify
+                .unwrap_err()
+                .to_string()
+                .contains("Rate limit exceeded")
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::AuthError;
-use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
 use rsa::{Pkcs1v15Sign, RsaPrivateKey, RsaPublicKey};
 use serde::{Deserialize, Serialize};
@@ -401,15 +401,14 @@ impl JwksKeyCache {
             AuthError::Crypto(format!("Failed to acquire write lock on keys: {}", e))
         })?;
         for jwk in jwks.keys {
-            if jwk.kty == "RSA" {
-                if let (Ok(n_bytes), Ok(e_bytes)) =
+            if jwk.kty == "RSA"
+                && let (Ok(n_bytes), Ok(e_bytes)) =
                     (base64_url_decode(&jwk.n), base64_url_decode(&jwk.e))
-                {
-                    let n = rsa::BigUint::from_bytes_be(&n_bytes);
-                    let e = rsa::BigUint::from_bytes_be(&e_bytes);
-                    if let Ok(pub_key) = RsaPublicKey::new(n, e) {
-                        map.insert(jwk.kid.clone(), pub_key);
-                    }
+            {
+                let n = rsa::BigUint::from_bytes_be(&n_bytes);
+                let e = rsa::BigUint::from_bytes_be(&e_bytes);
+                if let Ok(pub_key) = RsaPublicKey::new(n, e) {
+                    map.insert(jwk.kid.clone(), pub_key);
                 }
             }
         }
@@ -496,10 +495,12 @@ mod tests {
         // 1. Verification at now = 1439 (more than 60s skew before nbf = 1500) -> should fail
         let verified = verify_jwt(&token, &pub_pem, "my-app", "my-auth-server", 1439);
         assert!(verified.is_err());
-        assert!(verified
-            .unwrap_err()
-            .to_string()
-            .contains("Token is not valid yet"));
+        assert!(
+            verified
+                .unwrap_err()
+                .to_string()
+                .contains("Token is not valid yet")
+        );
 
         // 2. Verification at now = 1440 (exactly within 60s skew leeway before nbf = 1500) -> should pass
         let verified = verify_jwt(&token, &pub_pem, "my-app", "my-auth-server", 1440);
