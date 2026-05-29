@@ -21,7 +21,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: codeitlikemiley/leptos_wasi
-          path: ../leptos_wasi
+          path: leptos_wasi
+
+      - name: Move leptos_wasi to sibling directory
+        run: |
+          mv leptos_wasi ../leptos_wasi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
