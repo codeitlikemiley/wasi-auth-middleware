@@ -324,7 +324,7 @@ impl HttpClient for FaultyHttpClient {
         _body: &str,
     ) -> Result<String, AuthError> {
         if self.should_fail {
-            Err(AuthError::Crypto("Network request failed".to_string()))
+            Err(AuthError::Other("Network request failed".to_string()))
         } else {
             Ok(self.response_body.clone())
         }
@@ -332,7 +332,7 @@ impl HttpClient for FaultyHttpClient {
 
     fn get(&self, _url: &str, _headers: &[(&str, &str)]) -> Result<String, AuthError> {
         if self.should_fail {
-            Err(AuthError::Crypto("Network request failed".to_string()))
+            Err(AuthError::Other("Network request failed".to_string()))
         } else {
             Ok(self.response_body.clone())
         }

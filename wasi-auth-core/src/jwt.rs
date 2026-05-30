@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::RwLock;
+use tracing::{debug, error, warn};
 
 /// The JWT claims payload embedded in every token issued by this crate.
 ///
@@ -62,12 +63,12 @@ pub fn base64_url_encode(data: &[u8]) -> String {
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::Crypto`] if the input contains characters outside the
+/// Returns [`AuthError::InvalidSignature`] if the input contains characters outside the
 /// Base64url alphabet or is otherwise malformed.
 pub fn base64_url_decode(data: &str) -> Result<Vec<u8>, AuthError> {
     BASE64_URL_SAFE_NO_PAD
         .decode(data)
-        .map_err(|e| AuthError::Crypto(format!("Base64url decode error: {:?}", e)))
+        .map_err(|e| AuthError::InvalidSignature(format!("Base64url decode error: {:?}", e)))
 }
 
 /// Creates a signed **RS256** JSON Web Token.
@@ -88,13 +89,17 @@ pub fn base64_url_decode(data: &str) -> Result<Vec<u8>, AuthError> {
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::Crypto`] if serialisation, PEM parsing, or signing
+/// Returns granular [`AuthError`] variants if serialisation, PEM parsing, or signing
 /// fails.
 pub fn generate_jwt(
     claims: &Claims,
     private_key_pem: &str,
     kid: Option<&str>,
 ) -> Result<String, AuthError> {
+    debug!(
+        "Generating JWT for subject: {}, issuer: {}",
+        claims.sub, claims.iss
+    );
     let mut claims = claims.clone();
     if claims.iat == 0 {
         let now = std::time::SystemTime::now()
@@ -111,9 +116,9 @@ pub fn generate_jwt(
     };
 
     let header_json = serde_json::to_vec(&header)
-        .map_err(|e| AuthError::Crypto(format!("Header serialization failed: {}", e)))?;
+        .map_err(|e| AuthError::InvalidSignature(format!("Header serialization failed: {}", e)))?;
     let claims_json = serde_json::to_vec(&claims)
-        .map_err(|e| AuthError::Crypto(format!("Claims serialization failed: {}", e)))?;
+        .map_err(|e| AuthError::InvalidSignature(format!("Claims serialization failed: {}", e)))?;
 
     let header_b64 = base64_url_encode(&header_json);
     let claims_b64 = base64_url_encode(&claims_json);
@@ -121,7 +126,7 @@ pub fn generate_jwt(
     let signing_input = format!("{}.{}", header_b64, claims_b64);
 
     let private_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
-        .map_err(|e| AuthError::Crypto(format!("Invalid private key PEM: {}", e)))?;
+        .map_err(|e| AuthError::KeyMissing(format!("Invalid private key PEM: {}", e)))?;
 
     let mut hasher = Sha256::new();
     hasher.update(signing_input.as_bytes());
@@ -129,7 +134,7 @@ pub fn generate_jwt(
 
     let signature = private_key
         .sign(Pkcs1v15Sign::new::<Sha256>(), &hashed)
-        .map_err(|e| AuthError::Crypto(format!("JWT signing failed: {}", e)))?;
+        .map_err(|e| AuthError::InvalidSignature(format!("JWT signing failed: {}", e)))?;
 
     let signature_b64 = base64_url_encode(&signature);
 
@@ -163,7 +168,7 @@ pub fn generate_jwt(
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::Crypto`] for any validation failure (bad format,
+/// Returns granular [`AuthError`] variants for any validation failure (bad format,
 /// unsupported algorithm, invalid signature, expired token, not-yet-valid token,
 /// or audience/issuer mismatch).
 /// Configuration options for JWT validation.
@@ -213,32 +218,50 @@ pub fn verify_jwt_with_options(
     now: u64,
     options: &ValidationOptions,
 ) -> Result<Claims, AuthError> {
+    debug!(
+        "Verifying JWT for aud: {}, iss: {}",
+        expected_aud, expected_iss
+    );
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
-        return Err(AuthError::Crypto(
-            "Invalid token format: expected 3 parts".to_string(),
-        ));
+        let err = AuthError::InvalidSignature("Invalid token format: expected 3 parts".to_string());
+        error!("JWT signature check failed: {:?}", err);
+        return Err(err);
     }
 
     let header_b64 = parts[0];
     let claims_b64 = parts[1];
     let signature_b64 = parts[2];
 
-    let header_json = base64_url_decode(header_b64)?;
-    let header: Header = serde_json::from_slice(&header_json)
-        .map_err(|e| AuthError::Crypto(format!("Failed to parse header JSON: {}", e)))?;
+    let header_json = base64_url_decode(header_b64).map_err(|e| {
+        error!("JWT signature check failed: {:?}", e);
+        e
+    })?;
+    let header: Header = serde_json::from_slice(&header_json).map_err(|e| {
+        let err = AuthError::InvalidSignature(format!("Failed to parse header JSON: {}", e));
+        error!("JWT signature check failed: {:?}", err);
+        err
+    })?;
     if header.alg != "RS256" {
-        return Err(AuthError::Crypto(format!(
+        let err = AuthError::InvalidSignature(format!(
             "Unsupported algorithm: {}, expected RS256",
             header.alg
-        )));
+        ));
+        error!("JWT signature check failed: {:?}", err);
+        return Err(err);
     }
 
     let signing_input = format!("{}.{}", header_b64, claims_b64);
-    let signature = base64_url_decode(signature_b64)?;
+    let signature = base64_url_decode(signature_b64).map_err(|e| {
+        error!("JWT signature check failed: {:?}", e);
+        e
+    })?;
 
-    let public_key = RsaPublicKey::from_public_key_pem(public_key_pem)
-        .map_err(|e| AuthError::Crypto(format!("Invalid public key PEM: {}", e)))?;
+    let public_key = RsaPublicKey::from_public_key_pem(public_key_pem).map_err(|e| {
+        let err = AuthError::KeyMissing(format!("Invalid public key PEM: {}", e));
+        error!("JWT signature check failed: {:?}", err);
+        err
+    })?;
 
     let mut hasher = Sha256::new();
     hasher.update(signing_input.as_bytes());
@@ -246,11 +269,22 @@ pub fn verify_jwt_with_options(
 
     public_key
         .verify(Pkcs1v15Sign::new::<Sha256>(), &hashed, &signature)
-        .map_err(|e| AuthError::Crypto(format!("JWT signature verification failed: {}", e)))?;
+        .map_err(|e| {
+            let err =
+                AuthError::SignatureMismatch(format!("JWT signature verification failed: {}", e));
+            error!("JWT signature check failed: {:?}", err);
+            err
+        })?;
 
-    let claims_json = base64_url_decode(claims_b64)?;
-    let claims: Claims = serde_json::from_slice(&claims_json)
-        .map_err(|e| AuthError::Crypto(format!("Failed to deserialize Claims: {}", e)))?;
+    let claims_json = base64_url_decode(claims_b64).map_err(|e| {
+        error!("JWT signature check failed: {:?}", e);
+        e
+    })?;
+    let claims: Claims = serde_json::from_slice(&claims_json).map_err(|e| {
+        let err = AuthError::InvalidSignature(format!("Failed to deserialize Claims: {}", e));
+        error!("JWT signature check failed: {:?}", err);
+        err
+    })?;
 
     let is_expired = if let Some(exp_limit) = claims.exp.checked_add(options.leeway_secs) {
         exp_limit <= now
@@ -258,7 +292,9 @@ pub fn verify_jwt_with_options(
         claims.exp <= now
     };
     if is_expired {
-        return Err(AuthError::Crypto("Token has expired".to_string()));
+        let err = AuthError::TokenExpired("Token has expired".to_string());
+        warn!("JWT token is expired: {:?}", err);
+        return Err(err);
     }
 
     if let Some(nbf) = claims.nbf {
@@ -268,22 +304,28 @@ pub fn verify_jwt_with_options(
             now < nbf
         };
         if is_before {
-            return Err(AuthError::Crypto("Token is not valid yet".to_string()));
+            let err = AuthError::TokenExpired("Token is not valid yet".to_string());
+            warn!("JWT token is not valid yet: {:?}", err);
+            return Err(err);
         }
     }
 
     if claims.aud != expected_aud {
-        return Err(AuthError::Crypto(format!(
+        let err = AuthError::SignatureMismatch(format!(
             "Audience mismatch: expected {}, got {}",
             expected_aud, claims.aud
-        )));
+        ));
+        warn!("JWT audience mismatch: {:?}", err);
+        return Err(err);
     }
 
     if claims.iss != expected_iss {
-        return Err(AuthError::Crypto(format!(
+        let err = AuthError::SignatureMismatch(format!(
             "Issuer mismatch: expected {}, got {}",
             expected_iss, claims.iss
-        )));
+        ));
+        warn!("JWT issuer mismatch: {:?}", err);
+        return Err(err);
     }
 
     Ok(claims)
@@ -298,16 +340,18 @@ pub fn verify_jwt_with_options(
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::Crypto`] if the token has fewer than three segments or
+/// Returns [`AuthError::InvalidSignature`] if the token has fewer than three segments or
 /// if the header cannot be decoded / parsed.
 pub fn extract_kid(token: &str) -> Result<Option<String>, AuthError> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() < 3 {
-        return Err(AuthError::Crypto("Invalid token format".to_string()));
+        return Err(AuthError::InvalidSignature(
+            "Invalid token format".to_string(),
+        ));
     }
     let header_json = base64_url_decode(parts[0])?;
     let header: Header = serde_json::from_slice(&header_json)
-        .map_err(|e| AuthError::Crypto(format!("Failed to parse header JSON: {}", e)))?;
+        .map_err(|e| AuthError::InvalidSignature(format!("Failed to parse header JSON: {}", e)))?;
     Ok(header.kid)
 }
 
@@ -351,7 +395,7 @@ impl JwksKeyCache {
     ) -> Result<Option<RsaPublicKey>, AuthError> {
         {
             let map = self.keys.read().map_err(|e| {
-                AuthError::Crypto(format!("Failed to acquire read lock on keys: {}", e))
+                AuthError::KeyMissing(format!("Failed to acquire read lock on keys: {}", e))
             })?;
             if let Some(key) = map.get(kid) {
                 return Ok(Some(key.clone()));
@@ -365,7 +409,7 @@ impl JwksKeyCache {
 
         {
             let mut last_fetch = self.last_fetched.write().map_err(|e| {
-                AuthError::Crypto(format!(
+                AuthError::KeyMissing(format!(
                     "Failed to acquire write lock on last_fetched: {}",
                     e
                 ))
@@ -395,10 +439,10 @@ impl JwksKeyCache {
         }
 
         let jwks: JwksJson = serde_json::from_str(&jwks_json)
-            .map_err(|e| AuthError::Crypto(format!("Failed to parse JWKS JSON: {}", e)))?;
+            .map_err(|e| AuthError::KeyMissing(format!("Failed to parse JWKS JSON: {}", e)))?;
 
         let mut map = self.keys.write().map_err(|e| {
-            AuthError::Crypto(format!("Failed to acquire write lock on keys: {}", e))
+            AuthError::KeyMissing(format!("Failed to acquire write lock on keys: {}", e))
         })?;
         for jwk in jwks.keys {
             if jwk.kty == "RSA"

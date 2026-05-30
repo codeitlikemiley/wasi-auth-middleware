@@ -91,7 +91,7 @@ pub fn generate_totp_uri(email: &str, secret: &str, issuer: &str) -> String {
 /// Returns the matching step number on success, or `None` on failure.
 pub fn verify_totp(secret_b32: &str, code: &str, time_secs: u64) -> Result<Option<u64>, AuthError> {
     let secret_bytes = base32_decode(secret_b32)
-        .ok_or_else(|| AuthError::Crypto("Invalid Base32 secret".to_string()))?;
+        .ok_or_else(|| AuthError::Other("Invalid Base32 secret".to_string()))?;
 
     let clean_code = code.trim().replace(' ', "");
     if clean_code.len() != 6 || !clean_code.chars().all(|c| c.is_ascii_digit()) {
@@ -110,7 +110,7 @@ pub fn verify_totp(secret_b32: &str, code: &str, time_secs: u64) -> Result<Optio
 
         let step_bytes = step.to_be_bytes();
         let mut mac = HmacSha1::new_from_slice(&secret_bytes)
-            .map_err(|e| AuthError::Crypto(format!("HMAC key initialization failed: {}", e)))?;
+            .map_err(|e| AuthError::Other(format!("HMAC key initialization failed: {}", e)))?;
         mac.update(&step_bytes);
         let result = mac.finalize();
         let code_bytes = result.into_bytes();

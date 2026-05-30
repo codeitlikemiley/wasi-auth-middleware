@@ -1,5 +1,6 @@
 use crate::{AuthError, AuthStorage, EmailSender, RateLimiter};
 use rand::Rng;
+use tracing::{debug, info, warn};
 
 /// Generates a random **6-digit numeric** one-time password.
 ///
@@ -38,7 +39,7 @@ pub fn generate_otp() -> String {
 ///
 /// # Errors
 ///
-/// Returns [`AuthError::Crypto`] if the expiry timestamp overflows `u64` or rate-limited,
+/// Returns [`AuthError::Other`] if the expiry timestamp overflows `u64` or rate-limited,
 /// or propagates errors from storage or the email sender.
 pub fn send_and_store_otp(
     email: &str,
@@ -48,36 +49,49 @@ pub fn send_and_store_otp(
     now: u64,
     rate_limiter: Option<&dyn RateLimiter>,
 ) -> Result<String, AuthError> {
-    if let Some(limiter) = rate_limiter {
-        if !limiter.check_rate_limit(email, "send_otp")? {
-            return Err(AuthError::Crypto(
-                "Rate limit exceeded for sending OTP".to_string(),
-            ));
+    info!("Generating OTP for email: {}", email);
+
+    let result = (|| {
+        if let Some(limiter) = rate_limiter {
+            if !limiter.check_rate_limit(email, "send_otp")? {
+                return Err(AuthError::Other(
+                    "Rate limit exceeded for sending OTP".to_string(),
+                ));
+            }
+            limiter.record_action(email, "send_otp")?;
         }
-        limiter.record_action(email, "send_otp")?;
+
+        let otp = generate_otp();
+        let expires_at = now
+            .checked_add(expiry_duration_secs)
+            .ok_or_else(|| AuthError::Other("OTP expiry time overflow".to_string()))?;
+
+        storage.store_otp(email, &otp, expires_at)?;
+
+        let subject = "Your Secure Security Code";
+        let expiry_text = if expiry_duration_secs < 60 {
+            format!("{} seconds", expiry_duration_secs)
+        } else {
+            format!("{} minutes", expiry_duration_secs / 60)
+        };
+        let body = format!(
+            "Your authentication security code is: {}\n\nThis code will expire in {}.",
+            otp, expiry_text
+        );
+
+        sender.send_email(email, subject, &body)?;
+
+        Ok(otp)
+    })();
+
+    match &result {
+        Ok(_) => {}
+        Err(err) => {
+            warn!("Failed to generate/send OTP for email {}: {:?}", email, err);
+        }
     }
 
-    let otp = generate_otp();
-    let expires_at = now
-        .checked_add(expiry_duration_secs)
-        .ok_or_else(|| AuthError::Crypto("OTP expiry time overflow".to_string()))?;
-
-    storage.store_otp(email, &otp, expires_at)?;
-
-    let subject = "Your Secure Security Code";
-    let expiry_text = if expiry_duration_secs < 60 {
-        format!("{} seconds", expiry_duration_secs)
-    } else {
-        format!("{} minutes", expiry_duration_secs / 60)
-    };
-    let body = format!(
-        "Your authentication security code is: {}\n\nThis code will expire in {}.",
-        otp, expiry_text
-    );
-
-    sender.send_email(email, subject, &body)?;
-
-    Ok(otp)
+    result
 }
 
 /// Verifies a submitted OTP against the value stored for the given email.
@@ -94,15 +108,36 @@ pub fn verify_otp(
     storage: &impl AuthStorage,
     rate_limiter: Option<&dyn RateLimiter>,
 ) -> Result<bool, AuthError> {
-    if let Some(limiter) = rate_limiter {
-        if !limiter.check_rate_limit(email, "verify_otp")? {
-            return Err(AuthError::Crypto(
-                "Rate limit exceeded for verifying OTP".to_string(),
-            ));
+    debug!("Verifying OTP for email: {}", email);
+
+    let result = (|| {
+        if let Some(limiter) = rate_limiter {
+            if !limiter.check_rate_limit(email, "verify_otp")? {
+                return Err(AuthError::Other(
+                    "Rate limit exceeded for verifying OTP".to_string(),
+                ));
+            }
+            limiter.record_action(email, "verify_otp")?;
         }
-        limiter.record_action(email, "verify_otp")?;
+        storage.verify_otp(email, otp)
+    })();
+
+    match &result {
+        Ok(true) => {
+            info!("OTP verification successful for email: {}", email);
+        }
+        Ok(false) => {
+            warn!(
+                "OTP verification failed/expired/incorrect for email: {}",
+                email
+            );
+        }
+        Err(err) => {
+            warn!("OTP verification failed for email: {}: {:?}", email, err);
+        }
     }
-    storage.verify_otp(email, otp)
+
+    result
 }
 
 #[cfg(test)]

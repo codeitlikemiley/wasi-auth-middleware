@@ -42,6 +42,21 @@ pub use wasi_auth_traits::{
     Session, StdoutEmail,
 };
 
+/// Extracts the value of a cookie with the given `name` from a raw
+/// `Cookie` header string.
+///
+/// Performs a simple linear scan over semicolon-delimited `name=value` pairs
+/// and returns the first match.
+pub fn extract_cookie(cookie_header: &str, name: &str) -> Option<String> {
+    for cookie in cookie_header.split(';') {
+        let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
+        if parts.len() == 2 && parts[0] == name {
+            return Some(parts[1].to_string());
+        }
+    }
+    None
+}
+
 /// Returns a static status string confirming the crate is loaded and operational.
 ///
 /// This is a lightweight health-check helper useful for diagnostics or readiness

@@ -8,6 +8,7 @@ use base64::Engine;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{info, warn};
 use wasi_auth_traits::{AuthError, AuthStorage};
 
 /// Generates a signed Magic Link URL containing a JWT token.
@@ -44,6 +45,8 @@ pub fn generate_magic_link(
 
     let token = generate_jwt(&claims, private_key_pem, kid)?;
 
+    info!("Generated magic link token for email: {}", email);
+
     let separator = if base_url.contains('?') { "&" } else { "?" };
     Ok(format!("{}{}token={}", base_url, separator, token))
 }
@@ -64,23 +67,36 @@ pub fn verify_magic_link(
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    let claims = verify_jwt(token, public_key_pem, audience, issuer, now)?;
+    let claims = match verify_jwt(token, public_key_pem, audience, issuer, now) {
+        Ok(c) => c,
+        Err(err) => {
+            warn!("Magic link verification failed: {:?}", err);
+            return Err(err);
+        }
+    };
 
-    let jti = claims
-        .jti
-        .as_ref()
-        .ok_or_else(|| AuthError::Crypto("Missing JTI claim in token".to_string()))?;
+    let jti = match claims.jti.as_ref() {
+        Some(jti) => jti,
+        None => {
+            let err = AuthError::InvalidSignature("Missing JTI claim in token".to_string());
+            warn!("Magic link verification failed: {:?}", err);
+            return Err(err);
+        }
+    };
 
     // Check if token has been consumed
     if storage.is_jti_blacklisted(jti)? {
-        return Err(AuthError::Crypto(
-            "Magic link has already been used or is invalid".to_string(),
-        ));
+        let err =
+            AuthError::SessionRevoked("Magic link has already been used or is invalid".to_string());
+        warn!("Magic link verification failed: {:?}", err);
+        return Err(err);
     }
 
     // Blacklist JTI to prevent reuse. Set expiration to exp + 60 to align with verify_jwt leeway.
     let blacklist_exp = claims.exp.saturating_add(60);
     storage.blacklist_jti(jti, blacklist_exp)?;
+
+    info!("Successfully verified magic link for email: {}", claims.sub);
 
     Ok(claims.sub)
 }

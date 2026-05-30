@@ -1,5 +1,6 @@
 use crate::AuthError;
 use serde::{Deserialize, Serialize};
+use tracing::{error, info};
 
 /// Configuration bundle for an OAuth 2.0 / OpenID Connect provider.
 ///
@@ -189,6 +190,10 @@ impl Oauth2Client {
         client: &impl HttpClient,
         code_verifier: Option<&str>,
     ) -> Result<TokenResponse, AuthError> {
+        info!(
+            "Initiating OAuth code exchange against token_url: {}",
+            config.token_url
+        );
         let mut body = format!(
             "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&client_secret={}",
             urlencoding::encode(code),
@@ -206,10 +211,22 @@ impl Oauth2Client {
             ("Accept", "application/json"),
         ];
 
-        let resp_body = client.post(&config.token_url, &headers, &body)?;
-        let token_resp: TokenResponse = serde_json::from_str(&resp_body).map_err(|_| {
-            AuthError::Crypto("Failed to parse token response from provider".to_string())
-        })?;
+        let resp_body = match client.post(&config.token_url, &headers, &body) {
+            Ok(body) => body,
+            Err(err) => {
+                error!("OAuth code exchange failed: {:?}", err);
+                return Err(err);
+            }
+        };
+        let token_resp: TokenResponse = match serde_json::from_str(&resp_body) {
+            Ok(resp) => resp,
+            Err(_e) => {
+                let err =
+                    AuthError::Other("Failed to parse token response from provider".to_string());
+                error!("OAuth code exchange failed: {:?}", err);
+                return Err(err);
+            }
+        };
         Ok(token_resp)
     }
 
@@ -219,10 +236,14 @@ impl Oauth2Client {
         access_token: &str,
         client: &impl HttpClient,
     ) -> Result<UserInfo, AuthError> {
-        let userinfo_url = config
-            .userinfo_url
-            .as_ref()
-            .ok_or_else(|| AuthError::Crypto("Userinfo endpoint not configured".to_string()))?;
+        let userinfo_url = match config.userinfo_url.as_ref() {
+            Some(url) => url,
+            None => {
+                let err = AuthError::Other("Userinfo endpoint not configured".to_string());
+                error!("Failed to fetch userinfo from provider: {:?}", err);
+                return Err(err);
+            }
+        };
 
         let auth_header = format!("Bearer {}", access_token);
         let headers = [
@@ -230,10 +251,22 @@ impl Oauth2Client {
             ("Accept", "application/json"),
         ];
 
-        let resp_body = client.get(userinfo_url, &headers)?;
-        let user_info: UserInfo = serde_json::from_str(&resp_body).map_err(|_| {
-            AuthError::Crypto("Failed to parse userinfo response from provider".to_string())
-        })?;
+        let resp_body = match client.get(userinfo_url, &headers) {
+            Ok(body) => body,
+            Err(err) => {
+                error!("Failed to fetch userinfo from provider: {:?}", err);
+                return Err(err);
+            }
+        };
+        let user_info: UserInfo = match serde_json::from_str(&resp_body) {
+            Ok(info) => info,
+            Err(_e) => {
+                let err =
+                    AuthError::Other("Failed to parse userinfo response from provider".to_string());
+                error!("Failed to fetch userinfo from provider: {:?}", err);
+                return Err(err);
+            }
+        };
         Ok(user_info)
     }
 
@@ -246,7 +279,7 @@ impl Oauth2Client {
     ///
     /// # Errors
     ///
-    /// Returns [`AuthError::Crypto`] if `metadata_json` cannot be deserialized.
+    /// Returns [`AuthError::Other`] if `metadata_json` cannot be deserialized.
     pub fn parse_oidc_discovery(
         client_id: &str,
         client_secret: &str,
@@ -261,7 +294,7 @@ impl Oauth2Client {
         }
 
         let meta: DiscoveryMetadata = serde_json::from_str(metadata_json)
-            .map_err(|e| AuthError::Crypto(format!("Failed to parse OIDC metadata: {}", e)))?;
+            .map_err(|e| AuthError::Other(format!("Failed to parse OIDC metadata: {}", e)))?;
 
         Ok(OAuthConfig {
             client_id: client_id.to_string(),
@@ -466,7 +499,7 @@ mod tests {
         };
 
         let err = Oauth2Client::get_user_info(&config, "t123", &mock_client).unwrap_err();
-        assert!(matches!(err, AuthError::Crypto(_)));
+        assert!(matches!(err, AuthError::Other(_)));
     }
 
     #[test]
