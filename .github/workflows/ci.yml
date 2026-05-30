@@ -44,7 +44,7 @@ jobs:
 
       - name: Install wac-cli, wasm-tools, and just
         run: |
-          cargo binstall -y wac-cli wasm-tools just
+          cargo binstall -y --force wac-cli wasm-tools just
 
       - name: Install Wasmtime
         run: |
