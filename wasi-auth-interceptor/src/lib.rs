@@ -69,6 +69,9 @@ wit_bindgen::generate!({
     generate_all,
 });
 
+use tracing::{debug, info, warn};
+use wasi_auth_core::extract_cookie;
+
 /// The component struct that implements the `wasi:http/incoming-handler` export.
 ///
 /// This is the entry point for all inbound HTTP requests. The WASI runtime
@@ -104,9 +107,18 @@ impl exports::wasi::http::incoming_handler::Guest for Interceptor {
         request: exports::wasi::http::incoming_handler::IncomingRequest,
         response_outparam: exports::wasi::http::incoming_handler::ResponseOutparam,
     ) {
+        static INIT: std::sync::Once = std::sync::Once::new();
+        INIT.call_once(|| {
+            tracing_subscriber::fmt()
+                .with_writer(std::io::stderr)
+                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+                .init();
+        });
+
         use crate::wasi::http::types::{Fields, OutgoingBody, OutgoingResponse};
 
-        let config = config::InterceptorConfig::load();
+        static CONFIG: std::sync::OnceLock<config::InterceptorConfig> = std::sync::OnceLock::new();
+        let config = CONFIG.get_or_init(config::InterceptorConfig::load);
 
         let headers = request.headers();
         let _ = headers.delete(&"x-user-id".to_string());
@@ -118,8 +130,11 @@ impl exports::wasi::http::incoming_handler::Guest for Interceptor {
         let _ = headers.delete(&"x-user-name".to_string());
         let _ = headers.delete(&"X-User-Name".to_string());
 
+        let method = request.method();
         let path_with_query = request.path_with_query().unwrap_or_else(|| "/".to_string());
         let path = path_with_query.split('?').next().unwrap_or("/");
+
+        debug!("Interceptor handling request: {:?} {}", method, path);
 
         // 1. Check if it's a public path using config patterns
         let is_public = config
@@ -129,6 +144,7 @@ impl exports::wasi::http::incoming_handler::Guest for Interceptor {
             .any(|pattern| match_path(path, pattern));
 
         if is_public {
+            debug!("Bypassing authentication for public path: {}", path);
             // Forward request directly
             wasi::http::incoming_handler::handle(request, response_outparam);
             return;
@@ -137,7 +153,6 @@ impl exports::wasi::http::incoming_handler::Guest for Interceptor {
         // 2. Perform authentication check
         let mut token = None;
 
-        // Try to get token from Cookie (6 precedence levels)
         // Try to get token from Cookie (6 precedence levels)
         if let Some(cookies) =
             get_header_value(&headers, "cookie").or_else(|| get_header_value(&headers, "Cookie"))
@@ -160,108 +175,169 @@ impl exports::wasi::http::incoming_handler::Guest for Interceptor {
             token = Some(t.to_string());
         }
 
-        let mut authenticated_session = None;
-
-        if let Some(jwt_token) = token {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or(std::time::Duration::ZERO)
-                .as_secs();
-
-            let pub_key = std::env::var("JWT_PUBLIC_KEY").ok();
-            let aud = std::env::var("JWT_AUDIENCE").ok();
-            let iss = std::env::var("JWT_ISSUER").ok();
-
-            if let (Some(pub_key), Some(aud), Some(iss)) = (pub_key, aud, iss) {
-                // Securely verify JWT
-                if let Ok(claims) =
-                    wasi_auth_core::jwt::verify_jwt(&jwt_token, &pub_key, &aud, &iss, now)
-                {
-                    authenticated_session = Some(claims);
-                }
-            } else {
-                // Fallback to unsafe parsing but STILL validate token expiration manually
-                if let Ok(claims) = parse_claims_unsafe(&jwt_token) {
-                    let is_expired = if let Some(exp_limit) = claims.exp.checked_add(60) {
-                        exp_limit <= now
-                    } else {
-                        claims.exp <= now
-                    };
-                    if !is_expired {
-                        authenticated_session = Some(claims);
-                    }
-                }
-            }
+        if token.is_some() {
+            debug!("Extracted credentials token from request context");
+        } else {
+            debug!("No credentials token found in request context");
         }
 
-        if let Some(session) = authenticated_session {
-            // Inject identity headers into request
-            let _ = headers.set(&"x-user-id".to_string(), &[session.sub.as_bytes().to_vec()]);
+        let auth_result: Result<wasi_auth_core::jwt::Claims, wasi_auth_core::AuthError> =
+            if let Some(jwt_token) = token {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or(std::time::Duration::ZERO)
+                    .as_secs();
 
-            let roles_str = session.roles.join(",");
-            let _ = headers.set(
-                &"x-user-roles".to_string(),
-                &[roles_str.as_bytes().to_vec()],
-            );
+                let pub_key = std::env::var("JWT_PUBLIC_KEY").ok();
+                let aud = std::env::var("JWT_AUDIENCE").ok();
+                let iss = std::env::var("JWT_ISSUER").ok();
 
-            if let Some(email) = session.email {
-                let _ = headers.set(&"x-user-email".to_string(), &[email.as_bytes().to_vec()]);
-            }
-            if let Some(name) = session.name {
-                let _ = headers.set(&"x-user-name".to_string(), &[name.as_bytes().to_vec()]);
-            }
-
-            // Forward authenticated request to downstream application
-            wasi::http::incoming_handler::handle(request, response_outparam);
-        } else {
-            // Unauthenticated! Block request.
-            // If it's a POST/PUT/DELETE/PATCH/API request, return 401. Otherwise redirect to /login.
-            let method = request.method();
-            let is_api_or_action = matches!(
-                method,
-                crate::wasi::http::types::Method::Post
-                    | crate::wasi::http::types::Method::Put
-                    | crate::wasi::http::types::Method::Delete
-                    | crate::wasi::http::types::Method::Patch
-            ) || path.starts_with("/api/");
-
-            if is_api_or_action {
-                // Return 401 Unauthorized
-                let resp_headers = Fields::new();
-                let response = OutgoingResponse::new(resp_headers);
-                let _ = response.set_status_code(401);
-
-                let body = response.body().unwrap();
-                let stream = body.write().unwrap();
-                let _ = stream.blocking_write_and_flush(b"Unauthorized");
-                drop(stream);
-                let _ = OutgoingBody::finish(body, None);
-
-                exports::wasi::http::incoming_handler::ResponseOutparam::set(
-                    response_outparam,
-                    Ok(response),
-                );
+                if let (Some(pub_key), Some(aud), Some(iss)) = (pub_key, aud, iss) {
+                    // Securely verify JWT
+                    wasi_auth_core::jwt::verify_jwt(&jwt_token, &pub_key, &aud, &iss, now)
+                } else {
+                    // Fallback to unsafe parsing but STILL validate token expiration manually
+                    match parse_claims_unsafe(&jwt_token) {
+                        Ok(claims) => {
+                            let is_expired = if let Some(exp_limit) = claims.exp.checked_add(60) {
+                                exp_limit <= now
+                            } else {
+                                claims.exp <= now
+                            };
+                            if !is_expired {
+                                Ok(claims)
+                            } else {
+                                Err(wasi_auth_core::AuthError::TokenExpired(
+                                    "Token has expired".to_string(),
+                                ))
+                            }
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
             } else {
-                // Return 302 Redirect to login_redirect config
-                let resp_headers = Fields::new();
-                let _ = resp_headers.set(
-                    &"location".to_string(),
-                    &[config.auth.login_redirect.as_bytes().to_vec()],
-                );
-                let response = OutgoingResponse::new(resp_headers);
-                let _ = response.set_status_code(302);
+                Err(wasi_auth_core::AuthError::Other(
+                    "Missing authentication token".to_string(),
+                ))
+            };
 
-                let body = response.body().unwrap();
-                let stream = body.write().unwrap();
-                let redirect_msg = format!("Redirecting to {}...", config.auth.login_redirect);
-                let _ = stream.blocking_write_and_flush(&redirect_msg.into_bytes());
-                drop(stream);
-                let _ = OutgoingBody::finish(body, None);
+        match auth_result {
+            Ok(session) => {
+                // Inject identity headers into request
+                let _ = headers.set(&"x-user-id".to_string(), &[session.sub.as_bytes().to_vec()]);
 
-                exports::wasi::http::incoming_handler::ResponseOutparam::set(
-                    response_outparam,
-                    Ok(response),
+                let roles_str = session.roles.join(",");
+                let _ = headers.set(
+                    &"x-user-roles".to_string(),
+                    &[roles_str.as_bytes().to_vec()],
                 );
+
+                if let Some(email) = session.email {
+                    let _ = headers.set(&"x-user-email".to_string(), &[email.as_bytes().to_vec()]);
+                }
+                if let Some(name) = session.name {
+                    let _ = headers.set(&"x-user-name".to_string(), &[name.as_bytes().to_vec()]);
+                }
+
+                info!(
+                    "Request authenticated. Subject: {}. Injected X-User-* headers.",
+                    session.sub
+                );
+
+                // Forward authenticated request to downstream application
+                wasi::http::incoming_handler::handle(request, response_outparam);
+            }
+            Err(err) => {
+                let err_code = err.code();
+                let err_message = err.message();
+
+                // Unauthenticated! Block request.
+                // If it's a POST/PUT/DELETE/PATCH/API request, return 401. Otherwise redirect to /login.
+                let is_api_or_action = matches!(
+                    method,
+                    crate::wasi::http::types::Method::Post
+                        | crate::wasi::http::types::Method::Put
+                        | crate::wasi::http::types::Method::Delete
+                        | crate::wasi::http::types::Method::Patch
+                ) || path.starts_with("/api/");
+
+                warn!(
+                    "Request unauthenticated. Method: {:?}, Path: {}. Error: {}. Blocking or redirecting.",
+                    method, path, err_message
+                );
+
+                if is_api_or_action {
+                    // Return 401 Unauthorized with custom headers and JSON body
+                    let resp_headers = Fields::new();
+                    let _ = resp_headers
+                        .set(&"content-type".to_string(), &[b"application/json".to_vec()]);
+                    let _ = resp_headers
+                        .set(&"x-auth-error".to_string(), &[err_code.as_bytes().to_vec()]);
+                    // RFC 6750 WWW-Authenticate header
+                    let _ = resp_headers.set(
+                        &"www-authenticate".to_string(),
+                        &[format!(
+                            r#"Bearer error="invalid_token", error_description="{}""#,
+                            err_message
+                        )
+                        .as_bytes()
+                        .to_vec()],
+                    );
+
+                    let response = OutgoingResponse::new(resp_headers);
+                    let _ = response.set_status_code(401);
+
+                    let body = response.body().unwrap();
+                    let stream = body.write().unwrap();
+                    let response_payload = serde_json::json!({
+                        "error": err_code,
+                        "message": err_message
+                    })
+                    .to_string();
+                    let _ = stream.blocking_write_and_flush(response_payload.as_bytes());
+                    drop(stream);
+                    let _ = OutgoingBody::finish(body, None);
+
+                    exports::wasi::http::incoming_handler::ResponseOutparam::set(
+                        response_outparam,
+                        Ok(response),
+                    );
+                } else {
+                    // Return 302 Redirect with URL query parameters
+                    let resp_headers = Fields::new();
+                    let redirect_url = if config.auth.login_redirect.contains('?') {
+                        format!(
+                            "{}&auth_error={}&message={}",
+                            config.auth.login_redirect,
+                            urlencoding::encode(err_code),
+                            urlencoding::encode(err_message)
+                        )
+                    } else {
+                        format!(
+                            "{}?auth_error={}&message={}",
+                            config.auth.login_redirect,
+                            urlencoding::encode(err_code),
+                            urlencoding::encode(err_message)
+                        )
+                    };
+
+                    let _ = resp_headers
+                        .set(&"location".to_string(), &[redirect_url.as_bytes().to_vec()]);
+                    let response = OutgoingResponse::new(resp_headers);
+                    let _ = response.set_status_code(302);
+
+                    let body = response.body().unwrap();
+                    let stream = body.write().unwrap();
+                    let redirect_msg = format!("Redirecting to {}...", redirect_url);
+                    let _ = stream.blocking_write_and_flush(&redirect_msg.into_bytes());
+                    drop(stream);
+                    let _ = OutgoingBody::finish(body, None);
+
+                    exports::wasi::http::incoming_handler::ResponseOutparam::set(
+                        response_outparam,
+                        Ok(response),
+                    );
+                }
             }
         }
     }
@@ -276,21 +352,6 @@ fn get_header_value(fields: &crate::wasi::http::types::Fields, name: &str) -> Op
         .get(&name.to_string())
         .first()
         .and_then(|bytes| std::str::from_utf8(bytes).ok().map(|s| s.to_string()))
-}
-
-/// Extracts the value of a cookie with the given `name` from a raw
-/// `Cookie` header string.
-///
-/// Performs a simple linear scan over semicolon-delimited `name=value` pairs
-/// and returns the first match.
-fn extract_cookie(cookie_header: &str, name: &str) -> Option<String> {
-    for cookie in cookie_header.split(';') {
-        let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
-        if parts.len() == 2 && parts[0] == name {
-            return Some(parts[1].to_string());
-        }
-    }
-    None
 }
 
 /// Decodes the claims payload of a JWT **without** verifying its signature.
@@ -309,17 +370,25 @@ fn extract_cookie(cookie_header: &str, name: &str) -> Option<String> {
 /// Returns an error string if the token does not have at least two
 /// dot-separated segments, if Base64url decoding fails, or if JSON
 /// deserialisation into `Claims` fails.
-fn parse_claims_unsafe(token: &str) -> Result<wasi_auth_core::jwt::Claims, String> {
+fn parse_claims_unsafe(
+    token: &str,
+) -> Result<wasi_auth_core::jwt::Claims, wasi_auth_core::AuthError> {
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() < 2 {
-        return Err("Invalid JWT format".to_string());
+        return Err(wasi_auth_core::AuthError::InvalidSignature(
+            "Invalid JWT format".to_string(),
+        ));
     }
     // Decode header or claims
-    let claims_json =
-        wasi_auth_core::jwt::base64_url_decode(parts[1]).map_err(|e| e.to_string())?;
+    let claims_json = wasi_auth_core::jwt::base64_url_decode(parts[1])?;
 
     let claims: wasi_auth_core::jwt::Claims =
-        serde_json::from_slice(&claims_json).map_err(|e| e.to_string())?;
+        serde_json::from_slice(&claims_json).map_err(|e| {
+            wasi_auth_core::AuthError::InvalidSignature(format!(
+                "Failed to parse JWT claims: {}",
+                e
+            ))
+        })?;
     Ok(claims)
 }
 

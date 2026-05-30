@@ -10,6 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 leptos-wasi-auth = { path = "../../leptos-wasi-auth" }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 wasi-auth-core = { path = "../../wasi-auth-core" }
 wasi-auth-traits = { path = "../../wasi-auth-traits" }
 http = "1.1"

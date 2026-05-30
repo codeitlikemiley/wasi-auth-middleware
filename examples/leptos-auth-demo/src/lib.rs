@@ -5,6 +5,7 @@ use leptos_router::components::*;
 use leptos_router::path;
 use leptos_wasi::prelude::Handler;
 use leptos_wasi_auth::UserSession;
+use tracing::info;
 use wasi_auth_core::OAuthConfig;
 use wasi_auth_traits::{
     AuthStorage, EmailSender, InMemoryRateLimiter, InMemoryStorage, RateLimiter, StdoutEmail,
@@ -90,6 +91,7 @@ pub async fn get_session() -> Result<Option<UserSession>, ServerFnError> {
 
 #[server(RequestOtp, "/api")]
 pub async fn request_otp(email: String) -> Result<String, ServerFnError> {
+    info!("ServerFn request_otp starting for email: {}", email);
     let state = STATE.with(|s| s.clone());
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -131,6 +133,7 @@ pub async fn request_otp(email: String) -> Result<String, ServerFnError> {
 
 #[server(VerifyOtp, "/api")]
 pub async fn verify_otp(email: String, otp: String) -> Result<bool, ServerFnError> {
+    info!("ServerFn verify_otp starting for email: {}", email);
     let state = STATE.with(|s| s.clone());
 
     // Check rate limit
@@ -265,6 +268,7 @@ pub async fn exchange_oauth(
 
 #[server(Logout, "/api")]
 pub async fn logout() -> Result<(), ServerFnError> {
+    info!("ServerFn logout called. Invalidation request processed.");
     let state = STATE.with(|s| s.clone());
 
     if let Some(parts) = use_context::<http::request::Parts>() {
@@ -304,6 +308,7 @@ pub async fn logout() -> Result<(), ServerFnError> {
 
 #[server(RequestMagicLink, "/api")]
 pub async fn request_magic_link(email: String) -> Result<String, ServerFnError> {
+    info!("ServerFn request_magic_link starting for email: {}", email);
     let state = STATE.with(|s| s.clone());
 
     let base_url = "http://127.0.0.1:8080/magic-callback";
@@ -396,6 +401,7 @@ pub async fn setup_totp(email: String) -> Result<String, ServerFnError> {
 
 #[server(VerifyTotpLogin, "/api")]
 pub async fn verify_totp_login_action(email: String, code: String) -> Result<bool, ServerFnError> {
+    info!("ServerFn verify_totp_login starting for email: {}", email);
     let state = STATE.with(|s| s.clone());
     let ok = leptos_wasi_auth::verify_totp_login(&email, &code, &*state.storage)
         .map_err(|e| ServerFnError::new(format!("TOTP verification failed: {:?}", e)))?;
@@ -982,6 +988,13 @@ impl wasi::exports::http::incoming_handler::Guest for DemoApp {
         request: wasi::http::types::IncomingRequest,
         response_outparam: wasi::http::types::ResponseOutparam,
     ) {
+        static INIT: std::sync::Once = std::sync::Once::new();
+        INIT.call_once(|| {
+            tracing_subscriber::fmt()
+                .with_writer(std::io::stderr)
+                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+                .init();
+        });
         use any_spawner::Executor;
         use leptos_wasi::executor::Executor as WasiExecutor;
 

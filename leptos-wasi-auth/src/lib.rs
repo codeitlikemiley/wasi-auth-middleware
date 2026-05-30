@@ -55,6 +55,8 @@
 use http::request::Parts;
 #[cfg(any(feature = "ssr", feature = "hydrate", feature = "csr"))]
 use leptos::prelude::*;
+use tracing::{info, warn};
+pub use wasi_auth_core::extract_cookie;
 #[cfg(any(feature = "unsafe-dev-fallback", test))]
 use wasi_auth_core::jwt::Claims;
 use wasi_auth_core::jwt::verify_jwt_with_options;
@@ -143,22 +145,6 @@ pub fn sanitize_roles(roles: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-/// Extracts the value of a cookie with the given `name` from a raw
-/// `Cookie` header string.
-///
-/// Performs a simple linear scan over semicolon-delimited `name=value` pairs.
-/// Returns `Some(value)` for the first match, or `None` if no cookie with
-/// that name is present.
-pub fn extract_cookie(cookie_header: &str, name: &str) -> Option<String> {
-    for cookie in cookie_header.split(';') {
-        let parts: Vec<&str> = cookie.trim().splitn(2, '=').collect();
-        if parts.len() == 2 && parts[0] == name {
-            return Some(parts[1].to_string());
-        }
-    }
-    None
-}
-
 /// Core session extraction function that examines HTTP request [`Parts`] and
 /// returns a [`UserSession`] if authentication succeeds.
 ///
@@ -179,19 +165,22 @@ pub fn extract_cookie(cookie_header: &str, name: &str) -> Option<String> {
 ///      feature is enabled, the JWT claims are decoded **without signature
 ///      verification** (a warning is printed to stderr).
 ///    - If verification keys are missing and `unsafe-dev-fallback` is disabled,
-///      an [`AuthError::Crypto`] error is returned.
+///      an [`AuthError::KeyMissing`] error is returned.
 ///
 /// # Storage Backend
 ///
 /// When a `storage` backend is provided, the function additionally checks that
 /// the token exists in the session store. If the session has been revoked or
-/// was never stored, an [`AuthError::Crypto`] error is returned.
+/// was never stored, an [`AuthError::SessionRevoked`] error is returned.
 ///
 /// # Errors
 ///
-/// - [`AuthError::Crypto`] — JWT verification failed, keys are missing (without
-///   `unsafe-dev-fallback`), or the session was revoked.
-/// - [`AuthError::Storage`] — The storage backend encountered an error.
+/// - [`AuthError::TokenExpired`] — JWT has expired.
+/// - [`AuthError::SignatureMismatch`] — JWT signature check failed or audience/issuer mismatch.
+/// - [`AuthError::InvalidSignature`] — JWT decoding/parsing or format error.
+/// - [`AuthError::KeyMissing`] — Cryptographic verification keys are missing or invalid.
+/// - [`AuthError::SessionRevoked`] — Session has been revoked or is missing.
+/// - [`AuthError::StorageError`] — The storage backend encountered an error.
 pub fn extract_session_from_parts<S: AuthStorage>(
     parts: &Parts,
     storage: Option<&S>,
@@ -293,18 +282,35 @@ pub fn extract_session_from_parts_with_options<S: AuthStorage>(
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let claims = verify_jwt_with_options(&token, pub_key, aud, iss, now, options)?;
+        let claims = match verify_jwt_with_options(&token, pub_key, aud, iss, now, options) {
+            Ok(c) => c,
+            Err(err) => {
+                warn!("Signature check error in session extraction: {:?}", err);
+                return Err(err);
+            }
+        };
 
         // If a storage backend is provided, verify session is active
-        if let Some(store) = storage
-            && store.get_session(&token)?.is_none()
-        {
-            return Err(AuthError::Crypto(
-                "Session revoked or not found in storage".to_string(),
-            ));
+        if let Some(store) = storage {
+            match store.get_session(&token) {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    let err = AuthError::SessionRevoked(
+                        "Session revoked or not found in storage".to_string(),
+                    );
+                    warn!("Session lookup failed/revoked: {:?}", err);
+                    return Err(err);
+                }
+                Err(err) => {
+                    warn!("Session storage lookup error: {:?}", err);
+                    return Err(err);
+                }
+            }
         }
 
         let roles = sanitize_roles(claims.roles);
+
+        info!("Successfully extracted session for user: {}", claims.sub);
 
         Ok(Some(UserSession {
             user_id: claims.sub,
@@ -319,12 +325,21 @@ pub fn extract_session_from_parts_with_options<S: AuthStorage>(
                 "WARNING: Running in unsafe-dev-fallback mode! Token signatures are not verified."
             );
             // Ensure the token storage lookup is always executed if storage is provided, even in dev mode unverified fallback.
-            if let Some(store) = storage
-                && store.get_session(&token)?.is_none()
-            {
-                return Err(AuthError::Crypto(
-                    "Session revoked or not found in storage".to_string(),
-                ));
+            if let Some(store) = storage {
+                match store.get_session(&token) {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        let err = AuthError::SessionRevoked(
+                            "Session revoked or not found in storage".to_string(),
+                        );
+                        warn!("Session lookup failed/revoked (fallback): {:?}", err);
+                        return Err(err);
+                    }
+                    Err(err) => {
+                        warn!("Session storage lookup error (fallback): {:?}", err);
+                        return Err(err);
+                    }
+                }
             }
 
             // No verification key configured, just parse claims without verification (Unsafe - Dev/Testing only!)
@@ -334,6 +349,11 @@ pub fn extract_session_from_parts_with_options<S: AuthStorage>(
                 if let Ok(claims) = serde_json::from_slice::<Claims>(&claims_json) {
                     let roles = sanitize_roles(claims.roles);
 
+                    info!(
+                        "Successfully extracted session for user (fallback): {}",
+                        claims.sub
+                    );
+
                     return Ok(Some(UserSession {
                         user_id: claims.sub,
                         roles,
@@ -342,13 +362,13 @@ pub fn extract_session_from_parts_with_options<S: AuthStorage>(
                     }));
                 }
             }
-            Err(AuthError::Crypto(
+            Err(AuthError::InvalidSignature(
                 "Unverified fallback failed: claims are malformed".to_string(),
             ))
         }
         #[cfg(not(feature = "unsafe-dev-fallback"))]
         {
-            Err(AuthError::Crypto(
+            Err(AuthError::KeyMissing(
                 "Missing cryptographic verification keys".to_string(),
             ))
         }
@@ -396,7 +416,8 @@ pub fn provide_session_context<S: AuthStorage>(
         None => Ok(None),
     };
 
-    provide_context(result);
+    provide_context(result.clone());
+    provide_context(result.ok().flatten());
 }
 
 /// Guard that retrieves the current [`UserSession`] from the Leptos context,
@@ -418,9 +439,12 @@ pub fn provide_session_context<S: AuthStorage>(
 /// Returns descriptive [`ServerFnError`] messages depending on the failure:
 ///
 /// - `"Unauthorized: No valid session found"` — no JWT / proxy headers present.
-/// - `"Unauthorized: <detail>"` — JWT cryptographic verification failed.
-/// - `"Internal Server Error: Database failure"` — storage backend error.
-/// - `"Internal Server Error: Email failure: <detail>"` — email subsystem error.
+/// - `"Unauthorized: Token Expired"` — JWT has expired.
+/// - `"Unauthorized: Signature Mismatch"` — signature mismatch.
+/// - `"Unauthorized: Invalid Token"` — format or decoding failure.
+/// - `"Unauthorized: Session Revoked"` — session is revoked or not in storage.
+/// - `"Unauthorized: Key Missing"` — missing cryptographic keys.
+/// - `"Internal Server Error"` — database or general failure.
 /// - `"Unauthorized: No authentication context found"` — [`provide_session_context`]
 ///   was not called before this function.
 #[cfg(any(feature = "ssr", feature = "hydrate", feature = "csr"))]
@@ -429,15 +453,31 @@ pub fn expect_session() -> Result<UserSession, ServerFnError> {
     match context_val {
         Some(Ok(Some(session))) => Ok(session),
         Some(Ok(None)) => Err(ServerFnError::new("Unauthorized: No valid session found")),
-        Some(Err(AuthError::Storage(_msg))) => {
+        Some(Err(AuthError::TokenExpired(_msg))) => {
+            eprintln!("Auth token expired: {}", _msg);
+            Err(ServerFnError::new("Unauthorized: Token Expired"))
+        }
+        Some(Err(AuthError::SignatureMismatch(_msg))) => {
+            eprintln!("Auth signature mismatch: {}", _msg);
+            Err(ServerFnError::new("Unauthorized: Signature Mismatch"))
+        }
+        Some(Err(AuthError::InvalidSignature(_msg))) => {
+            eprintln!("Auth invalid signature: {}", _msg);
+            Err(ServerFnError::new("Unauthorized: Invalid Token"))
+        }
+        Some(Err(AuthError::SessionRevoked(_msg))) => {
+            eprintln!("Auth session revoked: {}", _msg);
+            Err(ServerFnError::new("Unauthorized: Session Revoked"))
+        }
+        Some(Err(AuthError::KeyMissing(_msg))) => {
+            eprintln!("Auth key missing: {}", _msg);
+            Err(ServerFnError::new("Unauthorized: Key Missing"))
+        }
+        Some(Err(AuthError::StorageError(_msg))) => {
             eprintln!("Auth database storage error: {}", _msg);
             Err(ServerFnError::new("Internal Server Error"))
         }
-        Some(Err(AuthError::Crypto(_msg))) => {
-            eprintln!("Auth cryptographic / verification error: {}", _msg);
-            Err(ServerFnError::new("Unauthorized"))
-        }
-        Some(Err(AuthError::Email(_msg))) => {
+        Some(Err(AuthError::EmailError(_msg))) => {
             eprintln!("Auth email delivery error: {}", _msg);
             Err(ServerFnError::new("Internal Server Error"))
         }
@@ -607,7 +647,13 @@ pub fn verify_totp_login(
 ) -> Result<bool, AuthError> {
     let secret = match storage.get_totp_secret(email)? {
         Some(s) => s,
-        None => return Ok(false),
+        None => {
+            warn!(
+                "TOTP verification failed: no TOTP secret found for email: {}",
+                email
+            );
+            return Ok(false);
+        }
     };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -617,12 +663,21 @@ pub fn verify_totp_login(
     if let Some(step) = wasi_auth_core::totp::verify_totp(&secret, code, now)? {
         let replay_key = format!("totp:{}:{}", email, step);
         if storage.is_jti_blacklisted(&replay_key)? {
+            warn!(
+                "TOTP verification failed: replay attack detected for email: {}",
+                email
+            );
             return Ok(false); // Replay attack detected!
         }
         // Blacklist step for 90 seconds to cover drift window
         storage.blacklist_jti(&replay_key, now.saturating_add(90))?;
+        info!("TOTP verification successful for email: {}", email);
         Ok(true)
     } else {
+        warn!(
+            "TOTP verification failed: invalid code for email: {}",
+            email
+        );
         Ok(false)
     }
 }
@@ -680,7 +735,7 @@ mod tests {
             Ok(())
         }
         fn get_session(&self, _id: &str) -> Result<Option<wasi_auth_core::Session>, AuthError> {
-            Err(AuthError::Storage("Connection timed out".to_string()))
+            Err(AuthError::StorageError("Connection timed out".to_string()))
         }
         fn delete_session(&self, _id: &str) -> Result<(), AuthError> {
             Ok(())
@@ -726,21 +781,20 @@ mod tests {
     fn test_proxy_headers_disabled() {
         let _lock = TEST_MUTEX.lock().unwrap();
         set_trust_proxy_headers(false);
-        // Clear environment variable just in case it is set
-        unsafe { std::env::remove_var("TRUST_PROXY_HEADERS") };
+        temp_env::with_vars([("TRUST_PROXY_HEADERS", None::<&str>)], || {
+            let (parts, _) = Request::builder()
+                .header("x-user-id", "alice123")
+                .header("x-user-roles", "admin, user")
+                .body(())
+                .unwrap()
+                .into_parts();
 
-        let (parts, _) = Request::builder()
-            .header("x-user-id", "alice123")
-            .header("x-user-roles", "admin, user")
-            .body(())
-            .unwrap()
-            .into_parts();
+            let storage: Option<&InMemoryStorage> = None;
+            let session = extract_session_from_parts(&parts, storage, None, None, None).unwrap();
 
-        let storage: Option<&InMemoryStorage> = None;
-        let session = extract_session_from_parts(&parts, storage, None, None, None).unwrap();
-
-        // Should return None because proxy headers are disabled and no JWT token is provided
-        assert!(session.is_none());
+            // Should return None because proxy headers are disabled and no JWT token is provided
+            assert!(session.is_none());
+        });
     }
 
     // Test proxy headers when enabled via environment variable
@@ -750,34 +804,33 @@ mod tests {
 
         // Test with TRUST_PROXY_HEADERS
         set_trust_proxy_headers(false);
-        unsafe { std::env::set_var("TRUST_PROXY_HEADERS", "1") };
+        temp_env::with_vars([("TRUST_PROXY_HEADERS", Some("1"))], || {
+            let (parts, _) = Request::builder()
+                .header("x-user-id", "alice123")
+                .header("x-user-roles", "admin")
+                .body(())
+                .unwrap()
+                .into_parts();
 
-        let (parts, _) = Request::builder()
-            .header("x-user-id", "alice123")
-            .header("x-user-roles", "admin")
-            .body(())
-            .unwrap()
-            .into_parts();
-
-        let storage: Option<&InMemoryStorage> = None;
-        let session = extract_session_from_parts(&parts, storage, None, None, None).unwrap();
-        assert!(session.is_some());
-        unsafe { std::env::remove_var("TRUST_PROXY_HEADERS") };
+            let storage: Option<&InMemoryStorage> = None;
+            let session = extract_session_from_parts(&parts, storage, None, None, None).unwrap();
+            assert!(session.is_some());
+        });
 
         // Test with WASI_AUTH_TRUST_PROXY_HEADERS
         set_trust_proxy_headers(false);
-        unsafe { std::env::set_var("WASI_AUTH_TRUST_PROXY_HEADERS", "true") };
+        temp_env::with_vars([("WASI_AUTH_TRUST_PROXY_HEADERS", Some("true"))], || {
+            let (parts2, _) = Request::builder()
+                .header("x-user-id", "bob123")
+                .header("x-user-roles", "user")
+                .body(())
+                .unwrap()
+                .into_parts();
 
-        let (parts2, _) = Request::builder()
-            .header("x-user-id", "bob123")
-            .header("x-user-roles", "user")
-            .body(())
-            .unwrap()
-            .into_parts();
-
-        let session2 = extract_session_from_parts(&parts2, storage, None, None, None).unwrap();
-        assert!(session2.is_some());
-        unsafe { std::env::remove_var("WASI_AUTH_TRUST_PROXY_HEADERS") };
+            let storage: Option<&InMemoryStorage> = None;
+            let session2 = extract_session_from_parts(&parts2, storage, None, None, None).unwrap();
+            assert!(session2.is_some());
+        });
     }
 
     // Test role matching and sanitization
@@ -1039,13 +1092,13 @@ mod tests {
 
         #[cfg(not(feature = "unsafe-dev-fallback"))]
         {
-            // Under not(unsafe-dev-fallback), it must return Crypto error
+            // Under not(unsafe-dev-fallback), it must return KeyMissing error
             assert!(res.is_err());
             match res {
-                Err(AuthError::Crypto(msg)) => {
+                Err(AuthError::KeyMissing(msg)) => {
                     assert!(msg.contains("verification keys"));
                 }
-                _ => panic!("Expected Crypto error"),
+                _ => panic!("Expected KeyMissing error"),
             }
         }
     }
@@ -1073,7 +1126,7 @@ mod tests {
         );
         assert!(res.is_err());
         match res {
-            Err(AuthError::Crypto(msg)) => {
+            Err(AuthError::SessionRevoked(msg)) => {
                 assert!(msg.contains("Session revoked or not found"));
             }
             _ => panic!("Expected revoked session error"),
@@ -1132,7 +1185,7 @@ mod tests {
 
         assert!(res.is_err());
         match res {
-            Err(AuthError::Storage(msg)) => {
+            Err(AuthError::StorageError(msg)) => {
                 assert_eq!(msg, "Connection timed out");
             }
             _ => panic!("Expected Storage error, got {:?}", res),
@@ -1165,6 +1218,11 @@ mod tests {
             // Verify expect_session succeeds and contains correct data
             let session = expect_session().unwrap();
             assert_eq!(session.user_id, "context-user");
+
+            // Verify Option<UserSession> is also available directly in the context
+            let opt_session = use_context::<Option<UserSession>>().flatten();
+            assert!(opt_session.is_some());
+            assert_eq!(opt_session.unwrap().user_id, "context-user");
 
             // Verify expect_role is correct
             assert!(expect_role("admin").is_ok());
