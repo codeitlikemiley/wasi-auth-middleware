@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_HOME: /home/runner/.cargo
 
 jobs:
   check:
@@ -44,7 +45,6 @@ jobs:
       - name: Install wac-cli, wasm-tools, and just
         run: |
           cargo binstall -y wac-cli wasm-tools just
-          echo "$CARGO_HOME/bin" >> $GITHUB_PATH
 
       - name: Install Wasmtime
         run: |
@@ -52,4 +52,4 @@ jobs:
           echo "$HOME/.wasmtime/bin" >> $GITHUB_PATH
 
       - name: Run CI check pipeline
-        run: just check
+        run: $CARGO_HOME/bin/just check
