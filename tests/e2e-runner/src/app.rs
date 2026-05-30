@@ -6,6 +6,21 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
+fn generate_jwt_keys() -> (String, String) {
+    let mut rng = rand::thread_rng();
+    let private_key = rsa::RsaPrivateKey::new(&mut rng, 2048).unwrap();
+    let public_key = rsa::RsaPublicKey::from(&private_key);
+
+    use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
+    let priv_pem = private_key
+        .to_pkcs8_pem(LineEnding::LF)
+        .unwrap()
+        .to_string();
+    let pub_pem = public_key.to_public_key_pem(LineEnding::LF).unwrap();
+
+    (priv_pem, pub_pem)
+}
+
 struct ChildGuard {
     name: String,
     child: std::process::Child,
@@ -165,6 +180,7 @@ fn spawn_wasmtime(
     wasm_port: u16,
     mock_auth_port: u16,
     email_sink_port: u16,
+    pub_pem: &str,
 ) -> Result<std::process::Child> {
     println!(
         "Launching composed Wasm component under Wasmtime serve on port {}...",
@@ -183,6 +199,9 @@ fn spawn_wasmtime(
             "inherit-env=y",
             composed_wasm.to_str().unwrap(),
         ])
+        .env("JWT_PUBLIC_KEY", pub_pem)
+        .env("JWT_AUDIENCE", "client-id-123")
+        .env("JWT_ISSUER", "leptos-auth-demo")
         .current_dir(workspace_root)
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -191,7 +210,12 @@ fn spawn_wasmtime(
     Ok(child)
 }
 
-async fn run_e2e_tests(wasm_port: u16, mock_auth_port: u16, email_sink_port: u16) -> Result<()> {
+async fn run_e2e_tests(
+    wasm_port: u16,
+    mock_auth_port: u16,
+    email_sink_port: u16,
+    priv_pem: &str,
+) -> Result<()> {
     let client = reqwest::Client::new();
 
     // --- TEST 1: Wasm Application Sanity Request (Sanity check pipeline logic) ---
@@ -311,10 +335,139 @@ async fn run_e2e_tests(wasm_port: u16, mock_auth_port: u16, email_sink_port: u16
     );
     println!("[E2E Test] Test 3: PASSED!");
 
+    // --- TEST 4: Client-side Error Propagation (401 on missing token) ---
+    println!(
+        "[E2E Test] Test 4: Verify 401 Unauthorized propagation for missing token on API paths..."
+    );
+    let api_url = format!("http://127.0.0.1:{}/api/protected", wasm_port);
+    let res = client.get(&api_url).send().await?;
+    assert_eq!(res.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    // Validate Content-Type is application/json
+    let content_type = res
+        .headers()
+        .get("content-type")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        content_type.contains("application/json"),
+        "Expected JSON response content-type, got: {}",
+        content_type
+    );
+
+    // Validate headers
+    let auth_error_header = res
+        .headers()
+        .get("x-auth-error")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(auth_error_header, "Other");
+
+    let www_authenticate_header = res
+        .headers()
+        .get("www-authenticate")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(www_authenticate_header.contains("invalid_token"));
+    assert!(www_authenticate_header.contains("Missing authentication token"));
+
+    // Validate body
+    let body_json: serde_json::Value = res.json().await?;
+    assert_eq!(body_json["error"], "Other");
+    assert_eq!(body_json["message"], "Missing authentication token");
+    println!("[E2E Test] Test 4: PASSED!");
+
+    // --- TEST 5: Client-side Error Propagation (302 redirect with parameters on missing token) ---
+    println!("[E2E Test] Test 5: Verify 302 Redirect propagation for page requests...");
+    let no_redirect_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let page_url = format!("http://127.0.0.1:{}/dashboard", wasm_port);
+    let res = no_redirect_client.get(&page_url).send().await?;
+    assert_eq!(res.status(), reqwest::StatusCode::FOUND); // 302 Redirect
+    let location = res
+        .headers()
+        .get("location")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        location.contains("/login"),
+        "Expected redirect to /login, got: {}",
+        location
+    );
+    assert!(
+        location.contains("auth_error=Other"),
+        "Expected auth_error=Other in redirect URL, got: {}",
+        location
+    );
+    assert!(
+        location.contains("message=Missing%20authentication%20token"),
+        "Expected message in redirect URL, got: {}",
+        location
+    );
+    println!("[E2E Test] Test 5: PASSED!");
+
+    // --- TEST 6: Client-side Error Propagation (401 on expired token) ---
+    println!("[E2E Test] Test 6: Verify 401 Unauthorized propagation for expired token...");
+    let priv_pem = priv_pem.to_string();
+
+    // Generate an expired token (expired 5 minutes ago)
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let expired_time = now.saturating_sub(300); // 5 mins ago
+
+    let expired_claims = wasi_auth_core::jwt::Claims {
+        sub: "expired-user".to_string(),
+        iss: "leptos-auth-demo".to_string(),
+        aud: "client-id-123".to_string(),
+        exp: expired_time,
+        iat: expired_time.saturating_sub(60),
+        nbf: None,
+        jti: None,
+        roles: vec!["user".to_string()],
+        name: Some("Expired User".to_string()),
+        email: Some("expired@example.com".to_string()),
+    };
+
+    let expired_token = wasi_auth_core::jwt::generate_jwt(&expired_claims, &priv_pem, None)
+        .map_err(|e| anyhow::anyhow!("Failed to generate expired JWT: {:?}", e))?;
+
+    let res = client
+        .get(&api_url)
+        .header("Authorization", format!("Bearer {}", expired_token))
+        .send()
+        .await?;
+
+    assert_eq!(res.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+    let auth_error_header = res
+        .headers()
+        .get("x-auth-error")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(auth_error_header, "TokenExpired");
+
+    let www_authenticate_header = res
+        .headers()
+        .get("www-authenticate")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(www_authenticate_header.contains("invalid_token"));
+    assert!(www_authenticate_header.contains("Token has expired"));
+
+    let body_json: serde_json::Value = res.json().await?;
+    assert_eq!(body_json["error"], "TokenExpired");
+    assert_eq!(body_json["message"], "Token has expired");
+    println!("[E2E Test] Test 6: PASSED!");
+
     Ok(())
 }
 
 pub async fn main_impl() -> Result<(), Box<dyn std::error::Error>> {
+    let (priv_pem, pub_pem) = generate_jwt_keys();
+
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let workspace_root = std::path::Path::new(&manifest_dir)
         .join("../..")
@@ -401,6 +554,7 @@ pub async fn main_impl() -> Result<(), Box<dyn std::error::Error>> {
         wasm_port,
         mock_auth_port,
         email_sink_port,
+        &pub_pem,
     )?;
     let _wasmtime_guard = ChildGuard {
         name: "wasmtime serve".to_string(),
@@ -412,7 +566,7 @@ pub async fn main_impl() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 7. Run E2E tests
-    run_e2e_tests(wasm_port, mock_auth_port, email_sink_port).await?;
+    run_e2e_tests(wasm_port, mock_auth_port, email_sink_port, &priv_pem).await?;
 
     println!("[E2E Runner] All E2E integration tests PASSED successfully!");
     Ok(())
@@ -424,6 +578,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_e2e_pipeline() -> Result<()> {
+        let (priv_pem, pub_pem) = generate_jwt_keys();
+
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
         let workspace_root = std::path::Path::new(&manifest_dir)
             .join("../..")
@@ -535,6 +691,7 @@ mod tests {
             wasm_port,
             mock_auth_port,
             email_sink_port,
+            &pub_pem,
         )?;
         let _wasmtime_guard = ChildGuard {
             name: "wasmtime serve".to_string(),
@@ -545,7 +702,7 @@ mod tests {
             return Err(anyhow::anyhow!("Wasmtime serve failed to start"));
         }
 
-        run_e2e_tests(wasm_port, mock_auth_port, email_sink_port).await?;
+        run_e2e_tests(wasm_port, mock_auth_port, email_sink_port, &priv_pem).await?;
         Ok(())
     }
 
