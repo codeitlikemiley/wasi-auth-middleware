@@ -50,25 +50,25 @@ impl crate::EmailSender for HttpEmail {
         }
         let payload = EmailPayload { to, subject, body };
         let body_bytes = serde_json::to_vec(&payload)
-            .map_err(|e| AuthError::Email(format!("Payload serialization failed: {}", e)))?;
+            .map_err(|e| AuthError::EmailError(format!("Payload serialization failed: {}", e)))?;
 
         let request = http::Request::builder()
             .method("POST")
             .uri(&self.service_url)
             .header("Content-Type", "application/json")
             .body(Some(bytes::Bytes::from(body_bytes)))
-            .map_err(|e| AuthError::Email(format!("Request building failed: {}", e)))?;
+            .map_err(|e| AuthError::EmailError(format!("Request building failed: {}", e)))?;
 
         let response = futures::executor::block_on(spin_sdk::http::send::<
             _,
             http::Response<bytes::Bytes>,
         >(request))
-        .map_err(|e| AuthError::Email(format!("Outbound HTTP send failed: {:?}", e)))?;
+        .map_err(|e| AuthError::EmailError(format!("Outbound HTTP send failed: {:?}", e)))?;
 
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(AuthError::Email(format!(
+            Err(AuthError::EmailError(format!(
                 "HttpEmail failed with status: {}",
                 response.status()
             )))
@@ -93,12 +93,12 @@ impl crate::EmailSender for HttpEmail {
         let response = ureq::post(&self.service_url)
             .timeout(std::time::Duration::from_secs(10))
             .send_json(payload)
-            .map_err(|e| AuthError::Email(format!("Outbound HTTP send failed: {}", e)))?;
+            .map_err(|e| AuthError::EmailError(format!("Outbound HTTP send failed: {}", e)))?;
 
         if response.status() >= 200 && response.status() < 300 {
             Ok(())
         } else {
-            Err(AuthError::Email(format!(
+            Err(AuthError::EmailError(format!(
                 "HttpEmail failed with status: {}",
                 response.status()
             )))
@@ -120,7 +120,7 @@ mod tests {
         let sender = HttpEmail::new("http://invalid-url-12345.local".to_string());
         let res = sender.send_email("test@example.com", "Subject", "Body");
         assert!(res.is_err());
-        if let Err(AuthError::Email(msg)) = res {
+        if let Err(AuthError::EmailError(msg)) = res {
             assert!(msg.contains("Outbound HTTP send failed"));
         } else {
             panic!("Expected Email error");

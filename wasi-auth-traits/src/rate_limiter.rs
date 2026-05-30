@@ -65,7 +65,7 @@ impl RateLimiter for InMemoryRateLimiter {
             .unwrap_or(self.default_limit);
 
         let read_guard = self.history.read().map_err(|e| {
-            AuthError::Storage(format!("Failed to acquire rate limiter read lock: {}", e))
+            AuthError::StorageError(format!("Failed to acquire rate limiter read lock: {}", e))
         })?;
 
         if let Some(timestamps) = read_guard.get(&map_key) {
@@ -82,7 +82,7 @@ impl RateLimiter for InMemoryRateLimiter {
         let map_key = format!("{}:{}", key, action);
 
         let mut write_guard = self.history.write().map_err(|e| {
-            AuthError::Storage(format!("Failed to acquire rate limiter write lock: {}", e))
+            AuthError::StorageError(format!("Failed to acquire rate limiter write lock: {}", e))
         })?;
 
         let entry = write_guard.entry(map_key).or_insert_with(Vec::new);

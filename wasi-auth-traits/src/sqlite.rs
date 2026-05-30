@@ -27,7 +27,7 @@ use crate::{AuthError, Session};
 ///
 /// This backend is only functional when compiled for `wasm32-wasi` targets and
 /// executed inside the Spin runtime. On native (non-WASI) platforms all trait
-/// methods return [`AuthError::Storage`](crate::AuthError::Storage).
+/// methods return [`AuthError::StorageError`](crate::AuthError::StorageError).
 ///
 /// Requires the `sqlite` feature flag.
 #[cfg(feature = "sqlite")]
@@ -81,7 +81,7 @@ impl SQLiteStorage {
     #[cfg(all(target_arch = "wasm32", target_os = "wasi"))]
     fn open_connection(&self) -> Result<spin_sdk::sqlite::Connection, AuthError> {
         spin_sdk::sqlite::Connection::open(&self.db_name)
-            .map_err(|e| AuthError::Storage(format!("Failed to open Spin SQLite: {:?}", e)))
+            .map_err(|e| AuthError::StorageError(format!("Failed to open Spin SQLite: {:?}", e)))
     }
 
     /// Initializes the database schema by creating the `sessions` and `otps`
@@ -99,7 +99,9 @@ impl SQLiteStorage {
             );",
             &[],
         )
-        .map_err(|e| AuthError::Storage(format!("Failed to create sessions table: {:?}", e)))?;
+        .map_err(|e| {
+            AuthError::StorageError(format!("Failed to create sessions table: {:?}", e))
+        })?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS otps (
@@ -109,7 +111,7 @@ impl SQLiteStorage {
             );",
             &[],
         )
-        .map_err(|e| AuthError::Storage(format!("Failed to create otps table: {:?}", e)))?;
+        .map_err(|e| AuthError::StorageError(format!("Failed to create otps table: {:?}", e)))?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS totp_secrets (
@@ -118,7 +120,9 @@ impl SQLiteStorage {
             );",
             &[],
         )
-        .map_err(|e| AuthError::Storage(format!("Failed to create totp_secrets table: {:?}", e)))?;
+        .map_err(|e| {
+            AuthError::StorageError(format!("Failed to create totp_secrets table: {:?}", e))
+        })?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS blacklisted_jtis (
@@ -128,7 +132,7 @@ impl SQLiteStorage {
             &[],
         )
         .map_err(|e| {
-            AuthError::Storage(format!("Failed to create blacklisted_jtis table: {:?}", e))
+            AuthError::StorageError(format!("Failed to create blacklisted_jtis table: {:?}", e))
         })?;
 
         Ok(())
@@ -155,7 +159,7 @@ impl crate::AuthStorage for SQLiteStorage {
     ) -> Result<(), AuthError> {
         let conn = self.open_connection()?;
         let roles_json = serde_json::to_string(roles)
-            .map_err(|e| AuthError::Storage(format!("Roles serialization failed: {}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("Roles serialization failed: {}", e)))?;
 
         use spin_sdk::sqlite::Value;
         let params = [
@@ -168,7 +172,7 @@ impl crate::AuthStorage for SQLiteStorage {
         conn.execute(
             "INSERT OR REPLACE INTO sessions (session_id, user_id, roles, expires_at) VALUES (?, ?, ?, ?)",
             &params
-        ).map_err(|e| AuthError::Storage(format!("SQLite execute error: {:?}", e)))?;
+        ).map_err(|e| AuthError::StorageError(format!("SQLite execute error: {:?}", e)))?;
         Ok(())
     }
 
@@ -181,24 +185,29 @@ impl crate::AuthStorage for SQLiteStorage {
                 "SELECT user_id, roles, expires_at FROM sessions WHERE session_id = ?",
                 &[Value::Text(session_id.to_string())],
             )
-            .map_err(|e| AuthError::Storage(format!("SQLite query error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("SQLite query error: {:?}", e)))?;
 
         if let Some(row) = row_set.rows.first() {
             let user_id = match &row.values[0] {
                 Value::Text(s) => s.clone(),
-                _ => return Err(AuthError::Storage("Invalid user_id type".to_string())),
+                _ => return Err(AuthError::StorageError("Invalid user_id type".to_string())),
             };
             let roles_str = match &row.values[1] {
                 Value::Text(s) => s.clone(),
-                _ => return Err(AuthError::Storage("Invalid roles type".to_string())),
+                _ => return Err(AuthError::StorageError("Invalid roles type".to_string())),
             };
             let expires_at_val = match &row.values[2] {
                 Value::Integer(i) => *i,
-                _ => return Err(AuthError::Storage("Invalid expires_at type".to_string())),
+                _ => {
+                    return Err(AuthError::StorageError(
+                        "Invalid expires_at type".to_string(),
+                    ));
+                }
             };
 
-            let roles: Vec<String> = serde_json::from_str(&roles_str)
-                .map_err(|e| AuthError::Storage(format!("Roles deserialization failed: {}", e)))?;
+            let roles: Vec<String> = serde_json::from_str(&roles_str).map_err(|e| {
+                AuthError::StorageError(format!("Roles deserialization failed: {}", e))
+            })?;
 
             let expires_at = expires_at_val as u64;
             if expires_at < self.get_now() {
@@ -227,7 +236,7 @@ impl crate::AuthStorage for SQLiteStorage {
             "DELETE FROM sessions WHERE session_id = ?",
             &[Value::Text(session_id.to_string())],
         )
-        .map_err(|e| AuthError::Storage(format!("SQLite delete error: {:?}", e)))?;
+        .map_err(|e| AuthError::StorageError(format!("SQLite delete error: {:?}", e)))?;
         Ok(())
     }
 
@@ -256,7 +265,7 @@ impl crate::AuthStorage for SQLiteStorage {
             "INSERT OR REPLACE INTO otps (email, otp, expires_at) VALUES (?, ?, ?)",
             &params,
         )
-        .map_err(|e| AuthError::Storage(format!("SQLite store OTP error: {:?}", e)))?;
+        .map_err(|e| AuthError::StorageError(format!("SQLite store OTP error: {:?}", e)))?;
         Ok(())
     }
 
@@ -269,16 +278,20 @@ impl crate::AuthStorage for SQLiteStorage {
                 "SELECT otp, expires_at FROM otps WHERE email = ?",
                 &[Value::Text(email.to_string())],
             )
-            .map_err(|e| AuthError::Storage(format!("SQLite query OTP error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("SQLite query OTP error: {:?}", e)))?;
 
         if let Some(row) = row_set.rows.first() {
             let db_otp = match &row.values[0] {
                 Value::Text(s) => s.clone(),
-                _ => return Err(AuthError::Storage("Invalid otp type".to_string())),
+                _ => return Err(AuthError::StorageError("Invalid otp type".to_string())),
             };
             let expires_at_val = match &row.values[1] {
                 Value::Integer(i) => *i,
-                _ => return Err(AuthError::Storage("Invalid expires_at type".to_string())),
+                _ => {
+                    return Err(AuthError::StorageError(
+                        "Invalid expires_at type".to_string(),
+                    ));
+                }
             };
 
             let expires_at = expires_at_val as u64;
@@ -287,7 +300,7 @@ impl crate::AuthStorage for SQLiteStorage {
                 "DELETE FROM otps WHERE email = ?",
                 &[Value::Text(email.to_string())],
             )
-            .map_err(|e| AuthError::Storage(format!("SQLite delete OTP error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("SQLite delete OTP error: {:?}", e)))?;
 
             if expires_at >= self.get_now() {
                 #[cfg(feature = "hash-otp")]
@@ -317,7 +330,7 @@ impl crate::AuthStorage for SQLiteStorage {
             "INSERT OR REPLACE INTO totp_secrets (email, secret) VALUES (?, ?)",
             &params,
         )
-        .map_err(|e| AuthError::Storage(format!("SQLite store TOTP secret error: {:?}", e)))?;
+        .map_err(|e| AuthError::StorageError(format!("SQLite store TOTP secret error: {:?}", e)))?;
         Ok(())
     }
 
@@ -329,11 +342,13 @@ impl crate::AuthStorage for SQLiteStorage {
                 "SELECT secret FROM totp_secrets WHERE email = ?",
                 &[Value::Text(email.to_string())],
             )
-            .map_err(|e| AuthError::Storage(format!("SQLite query TOTP secret error: {:?}", e)))?;
+            .map_err(|e| {
+                AuthError::StorageError(format!("SQLite query TOTP secret error: {:?}", e))
+            })?;
         if let Some(row) = row_set.rows.first() {
             match &row.values[0] {
                 Value::Text(s) => Ok(Some(s.clone())),
-                _ => Err(AuthError::Storage("Invalid secret type".to_string())),
+                _ => Err(AuthError::StorageError("Invalid secret type".to_string())),
             }
         } else {
             Ok(None)
@@ -347,7 +362,9 @@ impl crate::AuthStorage for SQLiteStorage {
             "DELETE FROM totp_secrets WHERE email = ?",
             &[Value::Text(email.to_string())],
         )
-        .map_err(|e| AuthError::Storage(format!("SQLite delete TOTP secret error: {:?}", e)))?;
+        .map_err(|e| {
+            AuthError::StorageError(format!("SQLite delete TOTP secret error: {:?}", e))
+        })?;
         Ok(())
     }
 
@@ -362,7 +379,7 @@ impl crate::AuthStorage for SQLiteStorage {
             "INSERT OR REPLACE INTO blacklisted_jtis (jti, expires_at) VALUES (?, ?)",
             &params,
         )
-        .map_err(|e| AuthError::Storage(format!("SQLite blacklist JTI error: {:?}", e)))?;
+        .map_err(|e| AuthError::StorageError(format!("SQLite blacklist JTI error: {:?}", e)))?;
         Ok(())
     }
 
@@ -375,12 +392,16 @@ impl crate::AuthStorage for SQLiteStorage {
                 &[Value::Text(jti.to_string())],
             )
             .map_err(|e| {
-                AuthError::Storage(format!("SQLite query blacklisted JTI error: {:?}", e))
+                AuthError::StorageError(format!("SQLite query blacklisted JTI error: {:?}", e))
             })?;
         if let Some(row) = row_set.rows.first() {
             let expires_at_val = match &row.values[0] {
                 Value::Integer(i) => *i,
-                _ => return Err(AuthError::Storage("Invalid expires_at type".to_string())),
+                _ => {
+                    return Err(AuthError::StorageError(
+                        "Invalid expires_at type".to_string(),
+                    ));
+                }
             };
             let expires_at = expires_at_val as u64;
             if expires_at < self.get_now() {
@@ -406,20 +427,20 @@ impl crate::AuthStorage for SQLiteStorage {
             "DELETE FROM sessions WHERE expires_at < ?",
             &[Value::Integer(now)],
         )
-        .map_err(|e| AuthError::Storage(format!("SQLite cleanup sessions error: {:?}", e)))?;
+        .map_err(|e| AuthError::StorageError(format!("SQLite cleanup sessions error: {:?}", e)))?;
 
         conn.execute(
             "DELETE FROM otps WHERE expires_at < ?",
             &[Value::Integer(now)],
         )
-        .map_err(|e| AuthError::Storage(format!("SQLite cleanup otps error: {:?}", e)))?;
+        .map_err(|e| AuthError::StorageError(format!("SQLite cleanup otps error: {:?}", e)))?;
 
         conn.execute(
             "DELETE FROM blacklisted_jtis WHERE expires_at < ?",
             &[Value::Integer(now)],
         )
         .map_err(|e| {
-            AuthError::Storage(format!("SQLite cleanup blacklisted JTIs error: {:?}", e))
+            AuthError::StorageError(format!("SQLite cleanup blacklisted JTIs error: {:?}", e))
         })?;
 
         Ok(())
@@ -438,52 +459,52 @@ impl crate::AuthStorage for SQLiteStorage {
         _roles: &[String],
         _expires_at: u64,
     ) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn get_session(&self, _session_id: &str) -> Result<Option<Session>, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn delete_session(&self, _session_id: &str) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn store_otp(&self, _email: &str, _otp: &str, _expires_at: u64) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn verify_otp(&self, _email: &str, _otp: &str) -> Result<bool, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn store_totp_secret(&self, _email: &str, _secret: &str) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn get_totp_secret(&self, _email: &str) -> Result<Option<String>, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn delete_totp_secret(&self, _email: &str) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn blacklist_jti(&self, _jti: &str, _expires_at: u64) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }
     fn is_jti_blacklisted(&self, _jti: &str) -> Result<bool, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "SQLite is not supported on this platform".to_string(),
         ))
     }

@@ -36,18 +36,52 @@ use thiserror::Error;
 /// Each variant wraps a human-readable message describing the failure.
 #[derive(Debug, Error, Clone)]
 pub enum AuthError {
-    /// A storage backend operation failed (e.g., read/write to KV store, SQLite, or in-memory map).
+    #[error("Token expired: {0}")]
+    TokenExpired(String),
+    #[error("Signature mismatch: {0}")]
+    SignatureMismatch(String),
+    #[error("Invalid signature: {0}")]
+    InvalidSignature(String),
+    #[error("Key missing: {0}")]
+    KeyMissing(String),
+    #[error("Session revoked: {0}")]
+    SessionRevoked(String),
     #[error("Storage error: {0}")]
-    Storage(String),
-    /// A cryptographic or input-validation operation failed (e.g., token signing, hash mismatch).
-    #[error("Crypto/Validation error: {0}")]
-    Crypto(String),
-    /// An email delivery operation failed (e.g., HTTP request error, serialization failure).
+    StorageError(String),
     #[error("Email error: {0}")]
-    Email(String),
-    /// A catch-all for errors that do not fit into the other categories.
+    EmailError(String),
     #[error("Other error: {0}")]
     Other(String),
+}
+
+impl AuthError {
+    /// Returns a static string slice representing the error variant name.
+    pub fn code(&self) -> &'static str {
+        match self {
+            AuthError::TokenExpired(_) => "TokenExpired",
+            AuthError::SignatureMismatch(_) => "SignatureMismatch",
+            AuthError::InvalidSignature(_) => "InvalidSignature",
+            AuthError::KeyMissing(_) => "KeyMissing",
+            AuthError::SessionRevoked(_) => "SessionRevoked",
+            AuthError::StorageError(_) => "StorageError",
+            AuthError::EmailError(_) => "EmailError",
+            AuthError::Other(_) => "Other",
+        }
+    }
+
+    /// Returns the wrapped error message string slice.
+    pub fn message(&self) -> &str {
+        match self {
+            AuthError::TokenExpired(msg) => msg,
+            AuthError::SignatureMismatch(msg) => msg,
+            AuthError::InvalidSignature(msg) => msg,
+            AuthError::KeyMissing(msg) => msg,
+            AuthError::SessionRevoked(msg) => msg,
+            AuthError::StorageError(msg) => msg,
+            AuthError::EmailError(msg) => msg,
+            AuthError::Other(msg) => msg,
+        }
+    }
 }
 
 /// Represents an authenticated user session.
@@ -176,7 +210,7 @@ pub trait EmailSender {
     ///
     /// # Errors
     ///
-    /// Returns [`AuthError::Email`] if delivery fails.
+    /// Returns [`AuthError::EmailError`] if delivery fails.
     fn send_email(&self, to: &str, subject: &str, body: &str) -> Result<(), AuthError>;
 }
 
@@ -229,7 +263,7 @@ pub fn hash_otp(otp: &str) -> Result<String, AuthError> {
     let argon2 = Argon2::default();
     let password_hash = argon2
         .hash_password(otp.as_bytes(), &salt)
-        .map_err(|e| AuthError::Crypto(format!("Argon2 hashing failed: {}", e)))?
+        .map_err(|e| AuthError::Other(format!("Argon2 hashing failed: {}", e)))?
         .to_string();
     Ok(password_hash)
 }

@@ -76,7 +76,7 @@ impl AuthStorage for InMemoryStorage {
         let mut sessions = self
             .sessions
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         sessions.insert(session_id.to_string(), session);
         Ok(())
     }
@@ -88,7 +88,7 @@ impl AuthStorage for InMemoryStorage {
             let sessions = self
                 .sessions
                 .read()
-                .map_err(|e| AuthError::Storage(e.to_string()))?;
+                .map_err(|e| AuthError::StorageError(e.to_string()))?;
             if let Some(session) = sessions.get(session_id) {
                 if session.expires_at >= now {
                     return Ok(Some(session.clone()));
@@ -101,7 +101,7 @@ impl AuthStorage for InMemoryStorage {
         let mut sessions = self
             .sessions
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         if let Some(session) = sessions.get(session_id)
             && session.expires_at < now
         {
@@ -114,7 +114,7 @@ impl AuthStorage for InMemoryStorage {
         let mut sessions = self
             .sessions
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         sessions.remove(session_id);
         Ok(())
     }
@@ -138,7 +138,7 @@ impl AuthStorage for InMemoryStorage {
         let mut otps = self
             .otps
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         otps.insert(email.to_string(), otp_data);
         Ok(())
     }
@@ -148,7 +148,7 @@ impl AuthStorage for InMemoryStorage {
         let mut otps = self
             .otps
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         if let Some(otp_data) = otps.remove(email) {
             if otp_data.expires_at >= now {
                 #[cfg(feature = "hash-otp")]
@@ -171,7 +171,7 @@ impl AuthStorage for InMemoryStorage {
         let mut secrets = self
             .totp_secrets
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         secrets.insert(email.to_string(), secret.to_string());
         Ok(())
     }
@@ -180,7 +180,7 @@ impl AuthStorage for InMemoryStorage {
         let secrets = self
             .totp_secrets
             .read()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         Ok(secrets.get(email).cloned())
     }
 
@@ -188,7 +188,7 @@ impl AuthStorage for InMemoryStorage {
         let mut secrets = self
             .totp_secrets
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         secrets.remove(email);
         Ok(())
     }
@@ -197,7 +197,7 @@ impl AuthStorage for InMemoryStorage {
         let mut blacklisted = self
             .blacklisted_jtis
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         blacklisted.insert(jti.to_string(), expires_at);
         Ok(())
     }
@@ -208,7 +208,7 @@ impl AuthStorage for InMemoryStorage {
             let blacklisted = self
                 .blacklisted_jtis
                 .read()
-                .map_err(|e| AuthError::Storage(e.to_string()))?;
+                .map_err(|e| AuthError::StorageError(e.to_string()))?;
             if let Some(&expires_at) = blacklisted.get(jti) {
                 if expires_at >= now {
                     return Ok(true);
@@ -220,7 +220,7 @@ impl AuthStorage for InMemoryStorage {
         let mut blacklisted = self
             .blacklisted_jtis
             .write()
-            .map_err(|e| AuthError::Storage(e.to_string()))?;
+            .map_err(|e| AuthError::StorageError(e.to_string()))?;
         if let Some(&expires_at) = blacklisted.get(jti)
             && expires_at < now
         {
@@ -235,21 +235,21 @@ impl AuthStorage for InMemoryStorage {
             let mut sessions = self
                 .sessions
                 .write()
-                .map_err(|e| AuthError::Storage(e.to_string()))?;
+                .map_err(|e| AuthError::StorageError(e.to_string()))?;
             sessions.retain(|_, s| s.expires_at >= now);
         }
         {
             let mut otps = self
                 .otps
                 .write()
-                .map_err(|e| AuthError::Storage(e.to_string()))?;
+                .map_err(|e| AuthError::StorageError(e.to_string()))?;
             otps.retain(|_, o| o.expires_at >= now);
         }
         {
             let mut blacklisted = self
                 .blacklisted_jtis
                 .write()
-                .map_err(|e| AuthError::Storage(e.to_string()))?;
+                .map_err(|e| AuthError::StorageError(e.to_string()))?;
             blacklisted.retain(|_, &mut exp| exp >= now);
         }
         Ok(())

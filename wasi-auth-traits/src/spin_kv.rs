@@ -14,7 +14,7 @@ use crate::{AuthError, Session};
 ///
 /// This backend is only functional when compiled for `wasm32-wasi` targets and
 /// executed inside the Spin runtime. On native (non-WASI) platforms all trait
-/// methods return [`AuthError::Storage`](crate::AuthError::Storage).
+/// methods return [`AuthError::StorageError`](crate::AuthError::StorageError).
 ///
 /// Requires the `spin` feature flag.
 #[cfg(feature = "spin")]
@@ -57,7 +57,7 @@ impl SpinKeyValueStorage {
     #[cfg(all(target_arch = "wasm32", target_os = "wasi"))]
     fn open_store(&self) -> Result<spin_sdk::key_value::Store, AuthError> {
         spin_sdk::key_value::Store::open(&self.store_name)
-            .map_err(|e| AuthError::Storage(format!("Failed to open Spin KV store: {:?}", e)))
+            .map_err(|e| AuthError::StorageError(format!("Failed to open Spin KV store: {:?}", e)))
     }
 
     /// Returns the current time as seconds since the Unix epoch.
@@ -87,12 +87,12 @@ impl crate::AuthStorage for SpinKeyValueStorage {
             expires_at,
         };
         let serialized = serde_json::to_vec(&session)
-            .map_err(|e| AuthError::Storage(format!("JSON serialization error: {}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("JSON serialization error: {}", e)))?;
 
         let key = format!("session:{}", session_id);
         store
             .set(&key, &serialized)
-            .map_err(|e| AuthError::Storage(format!("Spin KV set error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("Spin KV set error: {:?}", e)))?;
         Ok(())
     }
 
@@ -103,7 +103,7 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         match store.get(&key) {
             Ok(Some(bytes)) => {
                 let session: Session = serde_json::from_slice(&bytes).map_err(|e| {
-                    AuthError::Storage(format!("JSON deserialization error: {}", e))
+                    AuthError::StorageError(format!("JSON deserialization error: {}", e))
                 })?;
                 if session.expires_at < self.get_now() {
                     let _ = store.delete(&key);
@@ -113,7 +113,10 @@ impl crate::AuthStorage for SpinKeyValueStorage {
                 }
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(AuthError::Storage(format!("Spin KV get error: {:?}", e))),
+            Err(e) => Err(AuthError::StorageError(format!(
+                "Spin KV get error: {:?}",
+                e
+            ))),
         }
     }
 
@@ -122,7 +125,7 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         let key = format!("session:{}", session_id);
         store
             .delete(&key)
-            .map_err(|e| AuthError::Storage(format!("Spin KV delete error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("Spin KV delete error: {:?}", e)))?;
         Ok(())
     }
 
@@ -153,11 +156,11 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         };
 
         let serialized = serde_json::to_vec(&otp_data)
-            .map_err(|e| AuthError::Storage(format!("JSON serialization error: {}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("JSON serialization error: {}", e)))?;
 
         store
             .set(&key, &serialized)
-            .map_err(|e| AuthError::Storage(format!("Spin KV set error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("Spin KV set error: {:?}", e)))?;
         Ok(())
     }
 
@@ -174,11 +177,11 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         match store.get(&key) {
             Ok(Some(bytes)) => {
                 let otp_data: OtpData = serde_json::from_slice(&bytes).map_err(|e| {
-                    AuthError::Storage(format!("JSON deserialization error: {}", e))
+                    AuthError::StorageError(format!("JSON deserialization error: {}", e))
                 })?;
 
                 store.delete(&key).map_err(|e| {
-                    AuthError::Storage(format!("Spin KV delete OTP error: {:?}", e))
+                    AuthError::StorageError(format!("Spin KV delete OTP error: {:?}", e))
                 })?;
                 if otp_data.expires_at >= self.get_now() {
                     #[cfg(feature = "hash-otp")]
@@ -194,7 +197,10 @@ impl crate::AuthStorage for SpinKeyValueStorage {
                 }
             }
             Ok(None) => Ok(false),
-            Err(e) => Err(AuthError::Storage(format!("Spin KV get error: {:?}", e))),
+            Err(e) => Err(AuthError::StorageError(format!(
+                "Spin KV get error: {:?}",
+                e
+            ))),
         }
     }
 
@@ -203,7 +209,7 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         let key = format!("totp:{}", email);
         store
             .set(&key, secret.as_bytes())
-            .map_err(|e| AuthError::Storage(format!("Spin KV set TOTP error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("Spin KV set TOTP error: {:?}", e)))?;
         Ok(())
     }
 
@@ -213,12 +219,12 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         match store.get(&key) {
             Ok(Some(bytes)) => {
                 let s = String::from_utf8(bytes).map_err(|e| {
-                    AuthError::Storage(format!("Invalid UTF-8 in stored secret: {}", e))
+                    AuthError::StorageError(format!("Invalid UTF-8 in stored secret: {}", e))
                 })?;
                 Ok(Some(s))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(AuthError::Storage(format!(
+            Err(e) => Err(AuthError::StorageError(format!(
                 "Spin KV get TOTP error: {:?}",
                 e
             ))),
@@ -230,7 +236,7 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         let key = format!("totp:{}", email);
         store
             .delete(&key)
-            .map_err(|e| AuthError::Storage(format!("Spin KV delete TOTP error: {:?}", e)))?;
+            .map_err(|e| AuthError::StorageError(format!("Spin KV delete TOTP error: {:?}", e)))?;
         Ok(())
     }
 
@@ -238,9 +244,9 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         let store = self.open_store()?;
         let key = format!("blacklist:{}", jti);
         let bytes = expires_at.to_be_bytes();
-        store
-            .set(&key, &bytes)
-            .map_err(|e| AuthError::Storage(format!("Spin KV blacklist JTI error: {:?}", e)))?;
+        store.set(&key, &bytes).map_err(|e| {
+            AuthError::StorageError(format!("Spin KV blacklist JTI error: {:?}", e))
+        })?;
         Ok(())
     }
 
@@ -250,7 +256,7 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         match store.get(&key) {
             Ok(Some(bytes)) => {
                 if bytes.len() != 8 {
-                    return Err(AuthError::Storage(
+                    return Err(AuthError::StorageError(
                         "Invalid blacklisted JTI expiration length".to_string(),
                     ));
                 }
@@ -265,7 +271,7 @@ impl crate::AuthStorage for SpinKeyValueStorage {
                 }
             }
             Ok(None) => Ok(false),
-            Err(e) => Err(AuthError::Storage(format!(
+            Err(e) => Err(AuthError::StorageError(format!(
                 "Spin KV get blacklist error: {:?}",
                 e
             ))),
@@ -282,52 +288,52 @@ impl crate::AuthStorage for SpinKeyValueStorage {
         _roles: &[String],
         _expires_at: u64,
     ) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn get_session(&self, _session_id: &str) -> Result<Option<Session>, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn delete_session(&self, _session_id: &str) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn store_otp(&self, _email: &str, _otp: &str, _expires_at: u64) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn verify_otp(&self, _email: &str, _otp: &str) -> Result<bool, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn store_totp_secret(&self, _email: &str, _secret: &str) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn get_totp_secret(&self, _email: &str) -> Result<Option<String>, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn delete_totp_secret(&self, _email: &str) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn blacklist_jti(&self, _jti: &str, _expires_at: u64) -> Result<(), AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
     fn is_jti_blacklisted(&self, _jti: &str) -> Result<bool, AuthError> {
-        Err(AuthError::Storage(
+        Err(AuthError::StorageError(
             "Spin KV is not supported on this platform".to_string(),
         ))
     }
