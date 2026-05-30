@@ -462,6 +462,161 @@ async fn run_e2e_tests(
     assert_eq!(body_json["message"], "Token has expired");
     println!("[E2E Test] Test 6: PASSED!");
 
+    // --- TEST 7: Expired token on page path ---
+    println!(
+        "[E2E Test] Test 7: Verify 302 Redirect propagation for expired token on page path..."
+    );
+    let res = no_redirect_client
+        .get(&page_url)
+        .header("Cookie", format!("__Host-jwt={}", expired_token))
+        .send()
+        .await?;
+    assert_eq!(res.status(), reqwest::StatusCode::FOUND);
+    let location = res
+        .headers()
+        .get("location")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        location.contains("auth_error=TokenExpired"),
+        "Redirect location missing TokenExpired: {}",
+        location
+    );
+    assert!(
+        location.contains("message="),
+        "Redirect location missing message: {}",
+        location
+    );
+    println!("[E2E Test] Test 7: PASSED!");
+
+    // --- TEST 8: Invalid signature on API path ---
+    println!("[E2E Test] Test 8: Verify 401 Unauthorized for invalid signature on API path...");
+    let (wrong_priv, _) = generate_jwt_keys();
+    let future_time = now + 3600;
+    let bad_sig_claims = wasi_auth_core::jwt::Claims {
+        sub: "bad-sig-user".to_string(),
+        iss: "leptos-auth-demo".to_string(),
+        aud: "client-id-123".to_string(),
+        exp: future_time,
+        iat: now,
+        nbf: None,
+        jti: None,
+        roles: vec!["user".to_string()],
+        name: Some("Bad Sig User".to_string()),
+        email: Some("badsig@example.com".to_string()),
+    };
+    let bad_sig_token = wasi_auth_core::jwt::generate_jwt(&bad_sig_claims, &wrong_priv, None)
+        .map_err(|e| anyhow::anyhow!("Failed to generate bad signature JWT: {:?}", e))?;
+
+    let res = client
+        .get(&api_url)
+        .header("Authorization", format!("Bearer {}", bad_sig_token))
+        .send()
+        .await?;
+    assert_eq!(res.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let auth_error_header = res
+        .headers()
+        .get("x-auth-error")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(auth_error_header, "SignatureMismatch");
+
+    let body_json: serde_json::Value = res.json().await?;
+    assert_eq!(body_json["error"], "SignatureMismatch");
+    println!("[E2E Test] Test 8: PASSED!");
+
+    // --- TEST 9: Invalid signature on page path ---
+    println!(
+        "[E2E Test] Test 9: Verify 302 Redirect propagation for invalid signature on page path..."
+    );
+    let res = no_redirect_client
+        .get(&page_url)
+        .header("Cookie", format!("__Host-jwt={}", bad_sig_token))
+        .send()
+        .await?;
+    assert_eq!(res.status(), reqwest::StatusCode::FOUND);
+    let location = res
+        .headers()
+        .get("location")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        location.contains("auth_error=SignatureMismatch"),
+        "Redirect location missing SignatureMismatch: {}",
+        location
+    );
+    assert!(
+        location.contains("message="),
+        "Redirect location missing message: {}",
+        location
+    );
+    println!("[E2E Test] Test 9: PASSED!");
+
+    // --- TEST 10: Key missing / JWKS endpoint failure ---
+    println!(
+        "[E2E Test] Test 10: Verify status 401/500 and KeyMissing/Other header when key is missing..."
+    );
+    let valid_claims = wasi_auth_core::jwt::Claims {
+        sub: "valid-user".to_string(),
+        iss: "leptos-auth-demo".to_string(),
+        aud: "client-id-123".to_string(),
+        exp: now + 3600,
+        iat: now,
+        nbf: None,
+        jti: None,
+        roles: vec!["user".to_string()],
+        name: Some("Valid User".to_string()),
+        email: Some("valid@example.com".to_string()),
+    };
+    let valid_token = wasi_auth_core::jwt::generate_jwt(&valid_claims, &priv_pem.to_string(), None)
+        .map_err(|e| anyhow::anyhow!("Failed to generate valid JWT: {:?}", e))?;
+
+    let protected_fn_url = format!("http://127.0.0.1:{}/api/GetProtectedData", wasm_port);
+    let res = client
+        .post(&protected_fn_url)
+        .header("Authorization", format!("Bearer {}", valid_token))
+        .header("x-simulate-key-missing", "true")
+        .send()
+        .await?;
+    let status = res.status();
+    assert!(
+        status == reqwest::StatusCode::INTERNAL_SERVER_ERROR
+            || status == reqwest::StatusCode::UNAUTHORIZED,
+        "Expected 401 or 500, got: {}",
+        status
+    );
+
+    let auth_error_header = res
+        .headers()
+        .get("x-auth-error")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        auth_error_header == "KeyMissing" || auth_error_header == "Other",
+        "Expected KeyMissing or Other, got: {}",
+        auth_error_header
+    );
+    println!("[E2E Test] Test 10: PASSED!");
+
+    // --- TEST 11: Storage/database failure ---
+    println!(
+        "[E2E Test] Test 11: Verify status 500 when storage/database error occurs downstream..."
+    );
+    let res = client
+        .post(&protected_fn_url)
+        .header("Authorization", format!("Bearer {}", valid_token))
+        .header("x-simulate-db-failure", "true")
+        .send()
+        .await?;
+    assert_eq!(res.status(), reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    let auth_error_header = res
+        .headers()
+        .get("x-auth-error")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(auth_error_header, "StorageError");
+    println!("[E2E Test] Test 11: PASSED!");
+
     Ok(())
 }
 

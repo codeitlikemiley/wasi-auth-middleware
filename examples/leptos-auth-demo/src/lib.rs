@@ -84,6 +84,79 @@ thread_local! {
     static STATE: AppState = AppState::default();
 }
 
+struct DemoFailingStorage;
+
+impl AuthStorage for DemoFailingStorage {
+    fn store_session(
+        &self,
+        _session_id: &str,
+        _user_id: &str,
+        _roles: &[String],
+        _expires_at: u64,
+    ) -> Result<(), wasi_auth_traits::AuthError> {
+        Ok(())
+    }
+
+    fn get_session(
+        &self,
+        _session_id: &str,
+    ) -> Result<Option<wasi_auth_traits::Session>, wasi_auth_traits::AuthError> {
+        Err(wasi_auth_traits::AuthError::StorageError(
+            "Simulated DB error".to_string(),
+        ))
+    }
+
+    fn delete_session(&self, _session_id: &str) -> Result<(), wasi_auth_traits::AuthError> {
+        Ok(())
+    }
+
+    fn store_otp(
+        &self,
+        _email: &str,
+        _otp: &str,
+        _expires_at: u64,
+    ) -> Result<(), wasi_auth_traits::AuthError> {
+        Ok(())
+    }
+
+    fn verify_otp(&self, _email: &str, _otp: &str) -> Result<bool, wasi_auth_traits::AuthError> {
+        Ok(true)
+    }
+}
+
+#[server(name = GetProtectedData, prefix = "/api", endpoint = "GetProtectedData")]
+pub async fn get_protected_data() -> Result<String, ServerFnError> {
+    let session_res = leptos_wasi_auth::expect_session();
+    match session_res {
+        Ok(session) => Ok(format!("Welcome, {}!", session.user_id)),
+        Err(err) => {
+            if let Some(resp_opts) = use_context::<leptos_wasi::response::ResponseOptions>() {
+                let err_str = err.to_string();
+                if err_str.contains("Key Missing") {
+                    resp_opts.set_status(http::StatusCode::INTERNAL_SERVER_ERROR);
+                    resp_opts.insert_header(
+                        http::HeaderName::from_static("x-auth-error"),
+                        http::HeaderValue::from_static("KeyMissing"),
+                    );
+                } else if err_str.contains("Internal Server Error") {
+                    resp_opts.set_status(http::StatusCode::INTERNAL_SERVER_ERROR);
+                    resp_opts.insert_header(
+                        http::HeaderName::from_static("x-auth-error"),
+                        http::HeaderValue::from_static("StorageError"),
+                    );
+                } else {
+                    resp_opts.set_status(http::StatusCode::UNAUTHORIZED);
+                    resp_opts.insert_header(
+                        http::HeaderName::from_static("x-auth-error"),
+                        http::HeaderValue::from_static("Other"),
+                    );
+                }
+            }
+            Err(err)
+        }
+    }
+}
+
 #[server(GetSession, "/api")]
 pub async fn get_session() -> Result<Option<UserSession>, ServerFnError> {
     Ok(use_context::<Option<UserSession>>().flatten())
@@ -1017,17 +1090,44 @@ impl wasi::exports::http::incoming_handler::Guest for DemoApp {
                 .with_server_fn_axum::<VerifyMagicLinkToken>()
                 .with_server_fn_axum::<SetupTotp>()
                 .with_server_fn_axum::<VerifyTotpLogin>()
+                .with_server_fn_axum::<GetProtectedData>()
                 .generate_routes(App)
                 .handle_with_context(
                     move || shell(leptos_options.clone()),
                     move || {
-                        // Extract session headers or cookies and verify JWT using SPKI PEM key
-                        leptos_wasi_auth::provide_session_context(
-                            Some(&*state.storage),
-                            Some(state.public_key_pem),
-                            Some("client-id-123"),
-                            Some("leptos-auth-demo"),
-                        );
+                        let parts = use_context::<http::request::Parts>();
+                        let simulate_db_failure = parts
+                            .as_ref()
+                            .and_then(|p| p.headers.get("x-simulate-db-failure"))
+                            .is_some();
+                        let simulate_key_missing = parts
+                            .as_ref()
+                            .and_then(|p| p.headers.get("x-simulate-key-missing"))
+                            .is_some();
+
+                        let env_pub_key = std::env::var("JWT_PUBLIC_KEY").ok();
+                        let public_key = if simulate_key_missing {
+                            None
+                        } else {
+                            env_pub_key.as_deref().or(Some(state.public_key_pem))
+                        };
+
+                        if simulate_db_failure {
+                            let failing_storage = DemoFailingStorage;
+                            leptos_wasi_auth::provide_session_context(
+                                Some(&failing_storage),
+                                public_key,
+                                Some("client-id-123"),
+                                Some("leptos-auth-demo"),
+                            );
+                        } else {
+                            leptos_wasi_auth::provide_session_context(
+                                Some(&*state.storage),
+                                public_key,
+                                Some("client-id-123"),
+                                Some("leptos-auth-demo"),
+                            );
+                        }
                     },
                 )
                 .await

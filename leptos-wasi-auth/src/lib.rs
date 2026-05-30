@@ -1491,4 +1491,56 @@ mod tests {
             verify_magic_link(token, &public_key_pem, "my-aud", "my-iss", &storage).unwrap();
         assert_eq!(verified, email);
     }
+
+    #[test]
+    fn test_r4_key_missing_without_fallback() {
+        let (parts, _) = Request::builder()
+            .header("Authorization", "Bearer header.payload.sig")
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let result = extract_session_from_parts_with_options::<InMemoryStorage>(
+            &parts,
+            None,
+            None,
+            None,
+            None,
+            &wasi_auth_core::jwt::ValidationOptions::default(),
+        );
+
+        #[cfg(not(feature = "unsafe-dev-fallback"))]
+        {
+            assert!(result.is_err());
+            assert!(matches!(result.unwrap_err(), AuthError::KeyMissing(_)));
+        }
+        #[cfg(feature = "unsafe-dev-fallback")]
+        {
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_r4_storage_failure_propagation() {
+        let (pub_pem, aud, iss, token) = get_test_keys_and_token("dave");
+
+        let (parts, _) = Request::builder()
+            .header(http::header::AUTHORIZATION, format!("Bearer {}", token))
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let storage = FailingStorage;
+        let result = extract_session_from_parts_with_options(
+            &parts,
+            Some(&storage),
+            Some(&pub_pem),
+            Some(&aud),
+            Some(&iss),
+            &wasi_auth_core::jwt::ValidationOptions::default(),
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::StorageError(_)));
+    }
 }
