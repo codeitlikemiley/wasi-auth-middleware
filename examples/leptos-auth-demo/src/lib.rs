@@ -5,12 +5,12 @@ use leptos_router::path;
 use leptos_wasi::prelude::Handler;
 use leptos_wasi_auth::UserSession;
 use leptos_wasi_ui::LoginForm;
+#[cfg(feature = "passkey")]
+use leptos_wasi_ui::PasskeyList;
 use leptos_wasi_ui::TotpSetup as TotpSetupForm;
 use leptos_wasi_ui::components::login_form::{OtpVerification, TotpVerification};
 use leptos_wasi_ui::components::totp_setup::TotpSetupVerification;
-use leptos_wasi_ui::{SessionList, MfaStatus};
-#[cfg(feature = "passkey")]
-use leptos_wasi_ui::PasskeyList;
+use leptos_wasi_ui::{MfaStatus, SessionList};
 use tracing::info;
 use wasi_auth_core::OAuthConfig;
 use wasi_auth_traits::{
@@ -833,13 +833,19 @@ pub fn Dashboard() -> impl IntoView {
     let (sessions, set_sessions) = signal(vec![
         wasi_auth_traits::Session {
             session_id: "session_current_12345".to_string(),
-            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            user_id: session
+                .as_ref()
+                .map(|s| s.user_id.clone())
+                .unwrap_or_else(|| "mock_user".to_string()),
             roles: vec!["user".to_string()],
             expires_at: 1800000000,
         },
         wasi_auth_traits::Session {
             session_id: "session_other_67890".to_string(),
-            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            user_id: session
+                .as_ref()
+                .map(|s| s.user_id.clone())
+                .unwrap_or_else(|| "mock_user".to_string()),
             roles: vec!["user".to_string()],
             expires_at: 1800000000,
         },
@@ -888,7 +894,10 @@ pub fn Dashboard() -> impl IntoView {
     #[cfg(feature = "passkey")]
     let (passkeys, set_passkeys) = signal(vec![
         wasi_auth_core::passkey::StoredPasskey {
-            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            user_id: session
+                .as_ref()
+                .map(|s| s.user_id.clone())
+                .unwrap_or_else(|| "mock_user".to_string()),
             cred_id: "cred_1".to_string(),
             public_key: "dummy_pk_1".to_string(),
             name: "Personal MacBook Pro".to_string(),
@@ -897,7 +906,10 @@ pub fn Dashboard() -> impl IntoView {
             counter: 0,
         },
         wasi_auth_core::passkey::StoredPasskey {
-            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            user_id: session
+                .as_ref()
+                .map(|s| s.user_id.clone())
+                .unwrap_or_else(|| "mock_user".to_string()),
             cred_id: "cred_2".to_string(),
             public_key: "dummy_pk_2".to_string(),
             name: "Work iPad".to_string(),
@@ -983,7 +995,7 @@ pub fn Dashboard() -> impl IntoView {
                                 revoke_pending=revoke_pending
                                 revoke_result=revoke_result
                             />
-                            
+
                             <MfaStatus
                                 totp_enabled=totp_enabled
                                 on_disable=on_disable
