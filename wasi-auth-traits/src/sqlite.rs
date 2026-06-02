@@ -135,6 +135,34 @@ impl SQLiteStorage {
             AuthError::StorageError(format!("Failed to create blacklisted_jtis table: {:?}", e))
         })?;
 
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS passkeys (
+                user_id TEXT NOT NULL,
+                cred_id TEXT PRIMARY KEY,
+                public_key TEXT NOT NULL,
+                name TEXT NOT NULL,
+                counter INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                last_used_at INTEGER NOT NULL
+            );",
+            &[],
+        )
+        .map_err(|e| {
+            AuthError::StorageError(format!("Failed to create passkeys table: {:?}", e))
+        })?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS passkey_states (
+                id TEXT PRIMARY KEY,
+                state_json TEXT NOT NULL,
+                expires_at INTEGER NOT NULL
+            );",
+            &[],
+        )
+        .map_err(|e| {
+            AuthError::StorageError(format!("Failed to create passkey_states table: {:?}", e))
+        })?;
+
         Ok(())
     }
 
@@ -532,5 +560,424 @@ mod tests {
         assert!(storage.delete_totp_secret("e").is_err());
         assert!(storage.blacklist_jti("j", 0).is_err());
         assert!(storage.is_jti_blacklisted("j").is_err());
+    }
+}
+
+#[cfg(all(
+    feature = "sqlite",
+    target_arch = "wasm32",
+    target_os = "wasi",
+    feature = "passkey"
+))]
+#[async_trait::async_trait(?Send)]
+impl passkey_server::PasskeyStore for SQLiteStorage {
+    async fn create_passkey(
+        &self,
+        user_id: String,
+        cred_id: &str,
+        public_key: &str,
+        name: &str,
+        counter: i64,
+        created_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        let params = [
+            Value::Text(user_id),
+            Value::Text(cred_id.to_string()),
+            Value::Text(public_key.to_string()),
+            Value::Text(name.to_string()),
+            Value::Integer(counter),
+            Value::Integer(created_at),
+            Value::Integer(created_at),
+        ];
+        conn.execute(
+            "INSERT OR REPLACE INTO passkeys (user_id, cred_id, public_key, name, counter, created_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            &params
+        ).map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    async fn get_passkey(
+        &self,
+        cred_id: &str,
+    ) -> Result<Option<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        let row_set = conn.execute(
+            "SELECT user_id, public_key, name, created_at, last_used_at, counter FROM passkeys WHERE cred_id = ?",
+            &[Value::Text(cred_id.to_string())]
+        ).map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+
+        if let Some(row) = row_set.rows.first() {
+            let user_id = match &row.values[0] {
+                Value::Text(s) => s.clone(),
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid user_id type".to_string(),
+                    ));
+                }
+            };
+            let public_key = match &row.values[1] {
+                Value::Text(s) => s.clone(),
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid public_key type".to_string(),
+                    ));
+                }
+            };
+            let name = match &row.values[2] {
+                Value::Text(s) => s.clone(),
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid name type".to_string(),
+                    ));
+                }
+            };
+            let created_at = match &row.values[3] {
+                Value::Integer(i) => *i,
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid created_at type".to_string(),
+                    ));
+                }
+            };
+            let last_used_at = match &row.values[4] {
+                Value::Integer(i) => *i,
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid last_used_at type".to_string(),
+                    ));
+                }
+            };
+            let counter = match &row.values[5] {
+                Value::Integer(i) => *i,
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid counter type".to_string(),
+                    ));
+                }
+            };
+            Ok(Some(passkey_server::types::StoredPasskey {
+                user_id,
+                cred_id: cred_id.to_string(),
+                public_key,
+                name,
+                created_at,
+                last_used_at,
+                counter,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn list_passkeys(
+        &self,
+        user_id: String,
+    ) -> Result<Vec<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        let row_set = conn.execute(
+            "SELECT cred_id, public_key, name, created_at, last_used_at, counter FROM passkeys WHERE user_id = ?",
+            &[Value::Text(user_id.clone())]
+        ).map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+
+        let mut res = Vec::new();
+        for row in row_set.rows {
+            let cred_id = match &row.values[0] {
+                Value::Text(s) => s.clone(),
+                _ => continue,
+            };
+            let public_key = match &row.values[1] {
+                Value::Text(s) => s.clone(),
+                _ => continue,
+            };
+            let name = match &row.values[2] {
+                Value::Text(s) => s.clone(),
+                _ => continue,
+            };
+            let created_at = match &row.values[3] {
+                Value::Integer(i) => *i,
+                _ => continue,
+            };
+            let last_used_at = match &row.values[4] {
+                Value::Integer(i) => *i,
+                _ => continue,
+            };
+            let counter = match &row.values[5] {
+                Value::Integer(i) => *i,
+                _ => continue,
+            };
+            res.push(passkey_server::types::StoredPasskey {
+                user_id: user_id.clone(),
+                cred_id,
+                public_key,
+                name,
+                created_at,
+                last_used_at,
+                counter,
+            });
+        }
+        Ok(res)
+    }
+
+    async fn delete_passkey(
+        &self,
+        user_id: String,
+        cred_id: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        conn.execute(
+            "DELETE FROM passkeys WHERE user_id = ? AND cred_id = ?",
+            &[Value::Text(user_id), Value::Text(cred_id.to_string())],
+        )
+        .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    async fn update_passkey_counter(
+        &self,
+        cred_id: &str,
+        new_counter: i64,
+        last_used_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        let params = [
+            Value::Integer(new_counter),
+            Value::Integer(last_used_at),
+            Value::Text(cred_id.to_string()),
+        ];
+        conn.execute(
+            "UPDATE passkeys SET counter = ?, last_used_at = ? WHERE cred_id = ?",
+            &params,
+        )
+        .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    async fn update_passkey_name(
+        &self,
+        cred_id: &str,
+        new_name: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        let params = [
+            Value::Text(new_name.to_string()),
+            Value::Text(cred_id.to_string()),
+        ];
+        conn.execute("UPDATE passkeys SET name = ? WHERE cred_id = ?", &params)
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    async fn save_state(
+        &self,
+        id: &str,
+        state_json: &str,
+        expires_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        let params = [
+            Value::Text(id.to_string()),
+            Value::Text(state_json.to_string()),
+            Value::Integer(expires_at),
+        ];
+        conn.execute(
+            "INSERT OR REPLACE INTO passkey_states (id, state_json, expires_at) VALUES (?, ?, ?)",
+            &params,
+        )
+        .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    async fn get_state(
+        &self,
+        id: &str,
+    ) -> Result<Option<passkey_server::types::PasskeyState>, passkey_server::error::PasskeyError>
+    {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        let row_set = conn
+            .execute(
+                "SELECT state_json, expires_at FROM passkey_states WHERE id = ?",
+                &[Value::Text(id.to_string())],
+            )
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+
+        if let Some(row) = row_set.rows.first() {
+            let state_json = match &row.values[0] {
+                Value::Text(s) => s.clone(),
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid state_json type".to_string(),
+                    ));
+                }
+            };
+            let expires_at_val = match &row.values[1] {
+                Value::Integer(i) => *i,
+                _ => {
+                    return Err(passkey_server::error::PasskeyError::DatabaseError(
+                        "Invalid expires_at type".to_string(),
+                    ));
+                }
+            };
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+
+            if expires_at_val < now {
+                let _ = conn.execute(
+                    "DELETE FROM passkey_states WHERE id = ?",
+                    &[Value::Text(id.to_string())],
+                );
+                Ok(None)
+            } else {
+                Ok(Some(passkey_server::types::PasskeyState {
+                    id: id.to_string(),
+                    state_json,
+                    expires_at: expires_at_val,
+                }))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn delete_state(&self, id: &str) -> Result<(), passkey_server::error::PasskeyError> {
+        let conn = self
+            .open_connection()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        use spin_sdk::sqlite::Value;
+        conn.execute(
+            "DELETE FROM passkey_states WHERE id = ?",
+            &[Value::Text(id.to_string())],
+        )
+        .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    feature = "sqlite",
+    not(all(target_arch = "wasm32", target_os = "wasi")),
+    feature = "passkey"
+))]
+#[async_trait::async_trait(?Send)]
+impl passkey_server::PasskeyStore for SQLiteStorage {
+    async fn create_passkey(
+        &self,
+        _user_id: String,
+        _cred_id: &str,
+        _public_key: &str,
+        _name: &str,
+        _counter: i64,
+        _created_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn get_passkey(
+        &self,
+        _cred_id: &str,
+    ) -> Result<Option<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn list_passkeys(
+        &self,
+        _user_id: String,
+    ) -> Result<Vec<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn delete_passkey(
+        &self,
+        _user_id: String,
+        _cred_id: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn update_passkey_counter(
+        &self,
+        _cred_id: &str,
+        _new_counter: i64,
+        _last_used_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn update_passkey_name(
+        &self,
+        _cred_id: &str,
+        _new_name: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn save_state(
+        &self,
+        _id: &str,
+        _state_json: &str,
+        _expires_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn get_state(
+        &self,
+        _id: &str,
+    ) -> Result<Option<passkey_server::types::PasskeyState>, passkey_server::error::PasskeyError>
+    {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn delete_state(&self, _id: &str) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "SQLite is not supported on this platform".to_string(),
+        ))
     }
 }

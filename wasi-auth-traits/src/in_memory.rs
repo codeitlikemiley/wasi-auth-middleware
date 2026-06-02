@@ -31,6 +31,10 @@ pub struct InMemoryStorage {
     otps: RwLock<HashMap<String, OtpData>>,
     totp_secrets: RwLock<HashMap<String, String>>,
     blacklisted_jtis: RwLock<HashMap<String, u64>>,
+    #[cfg(feature = "passkey")]
+    passkeys: RwLock<HashMap<String, passkey_server::types::StoredPasskey>>,
+    #[cfg(feature = "passkey")]
+    passkey_states: RwLock<HashMap<String, passkey_server::types::PasskeyState>>,
 }
 
 impl Default for InMemoryStorage {
@@ -47,6 +51,10 @@ impl InMemoryStorage {
             otps: RwLock::new(HashMap::new()),
             totp_secrets: RwLock::new(HashMap::new()),
             blacklisted_jtis: RwLock::new(HashMap::new()),
+            #[cfg(feature = "passkey")]
+            passkeys: RwLock::new(HashMap::new()),
+            #[cfg(feature = "passkey")]
+            passkey_states: RwLock::new(HashMap::new()),
         }
     }
 
@@ -252,6 +260,145 @@ impl AuthStorage for InMemoryStorage {
                 .map_err(|e| AuthError::StorageError(e.to_string()))?;
             blacklisted.retain(|_, &mut exp| exp >= now);
         }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "passkey")]
+#[async_trait::async_trait(?Send)]
+impl passkey_server::PasskeyStore for InMemoryStorage {
+    async fn create_passkey(
+        &self,
+        user_id: String,
+        cred_id: &str,
+        public_key: &str,
+        name: &str,
+        counter: i64,
+        created_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let mut passkeys = self
+            .passkeys
+            .write()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let st = passkey_server::types::StoredPasskey {
+            user_id,
+            cred_id: cred_id.to_string(),
+            public_key: public_key.to_string(),
+            name: name.to_string(),
+            created_at,
+            last_used_at: created_at,
+            counter,
+        };
+        passkeys.insert(cred_id.to_string(), st);
+        Ok(())
+    }
+
+    async fn get_passkey(&self, cred_id: &str) -> Result<Option<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError> {
+        let passkeys = self
+            .passkeys
+            .read()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        Ok(passkeys.get(cred_id).cloned())
+    }
+
+    async fn list_passkeys(&self, user_id: String) -> Result<Vec<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError> {
+        let passkeys = self
+            .passkeys
+            .read()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let user_keys = passkeys
+            .values()
+            .filter(|pk| pk.user_id == user_id)
+            .cloned()
+            .collect();
+        Ok(user_keys)
+    }
+
+    async fn delete_passkey(&self, user_id: String, cred_id: &str) -> Result<(), passkey_server::error::PasskeyError> {
+        let mut passkeys = self
+            .passkeys
+            .write()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        if passkeys.get(cred_id).is_some_and(|pk| pk.user_id == user_id) {
+            passkeys.remove(cred_id);
+        }
+        Ok(())
+    }
+
+    async fn update_passkey_counter(
+        &self,
+        cred_id: &str,
+        new_counter: i64,
+        last_used_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let mut passkeys = self
+            .passkeys
+            .write()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        if let Some(pk) = passkeys.get_mut(cred_id) {
+            pk.counter = new_counter;
+            pk.last_used_at = last_used_at;
+        }
+        Ok(())
+    }
+
+    async fn update_passkey_name(&self, cred_id: &str, new_name: &str) -> Result<(), passkey_server::error::PasskeyError> {
+        let mut passkeys = self
+            .passkeys
+            .write()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        if let Some(pk) = passkeys.get_mut(cred_id) {
+            pk.name = new_name.to_string();
+        }
+        Ok(())
+    }
+
+    async fn save_state(&self, id: &str, state_json: &str, expires_at: i64) -> Result<(), passkey_server::error::PasskeyError> {
+        let mut states = self
+            .passkey_states
+            .write()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let state = passkey_server::types::PasskeyState {
+            id: id.to_string(),
+            state_json: state_json.to_string(),
+            expires_at,
+        };
+        states.insert(id.to_string(), state);
+        Ok(())
+    }
+
+    async fn get_state(&self, id: &str) -> Result<Option<passkey_server::types::PasskeyState>, passkey_server::error::PasskeyError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        {
+            let states = self
+                .passkey_states
+                .read()
+                .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+            if let Some(state) = states.get(id) {
+                if state.expires_at >= now {
+                    return Ok(Some(state.clone()));
+                }
+            } else {
+                return Ok(None);
+            }
+        }
+        let mut states = self
+            .passkey_states
+            .write()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        states.remove(id);
+        Ok(None)
+    }
+
+    async fn delete_state(&self, id: &str) -> Result<(), passkey_server::error::PasskeyError> {
+        let mut states = self
+            .passkey_states
+            .write()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        states.remove(id);
         Ok(())
     }
 }

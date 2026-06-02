@@ -363,3 +363,362 @@ mod tests {
         assert!(storage.is_jti_blacklisted("j").is_err());
     }
 }
+
+#[cfg(all(
+    feature = "spin",
+    target_arch = "wasm32",
+    target_os = "wasi",
+    feature = "passkey"
+))]
+#[async_trait::async_trait(?Send)]
+impl passkey_server::PasskeyStore for SpinKeyValueStorage {
+    async fn create_passkey(
+        &self,
+        user_id: String,
+        cred_id: &str,
+        public_key: &str,
+        name: &str,
+        counter: i64,
+        created_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let pk = passkey_server::types::StoredPasskey {
+            user_id: user_id.clone(),
+            cred_id: cred_id.to_string(),
+            public_key: public_key.to_string(),
+            name: name.to_string(),
+            created_at,
+            last_used_at: created_at,
+            counter,
+        };
+        let serialized_pk = serde_json::to_vec(&pk)
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let pk_key = format!("passkey:{}", cred_id);
+        store
+            .set(&pk_key, &serialized_pk)
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+
+        let list_key = format!("user_passkeys:{}", user_id);
+        let mut list: Vec<String> = match store.get(&list_key) {
+            Ok(Some(bytes)) => serde_json::from_slice(&bytes).unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        if !list.contains(&cred_id.to_string()) {
+            list.push(cred_id.to_string());
+            let serialized_list = serde_json::to_vec(&list)
+                .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+            store.set(&list_key, &serialized_list).map_err(|e| {
+                passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e))
+            })?;
+        }
+        Ok(())
+    }
+
+    async fn get_passkey(
+        &self,
+        cred_id: &str,
+    ) -> Result<Option<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let key = format!("passkey:{}", cred_id);
+        match store.get(&key) {
+            Ok(Some(bytes)) => {
+                let pk: passkey_server::types::StoredPasskey = serde_json::from_slice(&bytes)
+                    .map_err(|e| {
+                        passkey_server::error::PasskeyError::DatabaseError(e.to_string())
+                    })?;
+                Ok(Some(pk))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(passkey_server::error::PasskeyError::DatabaseError(format!(
+                "{:?}",
+                e
+            ))),
+        }
+    }
+
+    async fn list_passkeys(
+        &self,
+        user_id: String,
+    ) -> Result<Vec<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let list_key = format!("user_passkeys:{}", user_id);
+        let list: Vec<String> = match store.get(&list_key) {
+            Ok(Some(bytes)) => serde_json::from_slice(&bytes).unwrap_or_default(),
+            _ => return Ok(Vec::new()),
+        };
+
+        let mut res = Vec::new();
+        for cred_id in list {
+            let key = format!("passkey:{}", cred_id);
+            if let Ok(Some(bytes)) = store.get(&key) {
+                if let Ok(pk) =
+                    serde_json::from_slice::<passkey_server::types::StoredPasskey>(&bytes)
+                {
+                    res.push(pk);
+                }
+            }
+        }
+        Ok(res)
+    }
+
+    async fn delete_passkey(
+        &self,
+        user_id: String,
+        cred_id: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let pk_key = format!("passkey:{}", cred_id);
+        if let Ok(Some(bytes)) = store.get(&pk_key) {
+            if let Ok(pk) = serde_json::from_slice::<passkey_server::types::StoredPasskey>(&bytes) {
+                if pk.user_id == user_id {
+                    let _ = store.delete(&pk_key);
+                }
+            }
+        }
+
+        let list_key = format!("user_passkeys:{}", user_id);
+        if let Ok(Some(bytes)) = store.get(&list_key) {
+            if let Ok(mut list) = serde_json::from_slice::<Vec<String>>(&bytes) {
+                if let Some(pos) = list.iter().position(|x| x == cred_id) {
+                    list.remove(pos);
+                    let serialized_list = serde_json::to_vec(&list).map_err(|e| {
+                        passkey_server::error::PasskeyError::DatabaseError(e.to_string())
+                    })?;
+                    let _ = store.set(&list_key, &serialized_list);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn update_passkey_counter(
+        &self,
+        cred_id: &str,
+        new_counter: i64,
+        last_used_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let key = format!("passkey:{}", cred_id);
+        if let Ok(Some(bytes)) = store.get(&key) {
+            if let Ok(mut pk) =
+                serde_json::from_slice::<passkey_server::types::StoredPasskey>(&bytes)
+            {
+                pk.counter = new_counter;
+                pk.last_used_at = last_used_at;
+                let serialized = serde_json::to_vec(&pk).map_err(|e| {
+                    passkey_server::error::PasskeyError::DatabaseError(e.to_string())
+                })?;
+                store.set(&key, &serialized).map_err(|e| {
+                    passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e))
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn update_passkey_name(
+        &self,
+        cred_id: &str,
+        new_name: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let key = format!("passkey:{}", cred_id);
+        if let Ok(Some(bytes)) = store.get(&key) {
+            if let Ok(mut pk) =
+                serde_json::from_slice::<passkey_server::types::StoredPasskey>(&bytes)
+            {
+                pk.name = new_name.to_string();
+                let serialized = serde_json::to_vec(&pk).map_err(|e| {
+                    passkey_server::error::PasskeyError::DatabaseError(e.to_string())
+                })?;
+                store.set(&key, &serialized).map_err(|e| {
+                    passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e))
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn save_state(
+        &self,
+        id: &str,
+        state_json: &str,
+        expires_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let state = passkey_server::types::PasskeyState {
+            id: id.to_string(),
+            state_json: state_json.to_string(),
+            expires_at,
+        };
+        let serialized = serde_json::to_vec(&state)
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let key = format!("passkey_state:{}", id);
+        store
+            .set(&key, &serialized)
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+
+    async fn get_state(
+        &self,
+        id: &str,
+    ) -> Result<Option<passkey_server::types::PasskeyState>, passkey_server::error::PasskeyError>
+    {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let key = format!("passkey_state:{}", id);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        match store.get(&key) {
+            Ok(Some(bytes)) => {
+                let state: passkey_server::types::PasskeyState = serde_json::from_slice(&bytes)
+                    .map_err(|e| {
+                        passkey_server::error::PasskeyError::DatabaseError(e.to_string())
+                    })?;
+                if state.expires_at < now {
+                    let _ = store.delete(&key);
+                    Ok(None)
+                } else {
+                    Ok(Some(state))
+                }
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(passkey_server::error::PasskeyError::DatabaseError(format!(
+                "{:?}",
+                e
+            ))),
+        }
+    }
+
+    async fn delete_state(&self, id: &str) -> Result<(), passkey_server::error::PasskeyError> {
+        let store = self
+            .open_store()
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
+        let key = format!("passkey_state:{}", id);
+        store
+            .delete(&key)
+            .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(format!("{:?}", e)))?;
+        Ok(())
+    }
+}
+
+#[cfg(all(
+    feature = "spin",
+    not(all(target_arch = "wasm32", target_os = "wasi")),
+    feature = "passkey"
+))]
+#[async_trait::async_trait(?Send)]
+impl passkey_server::PasskeyStore for SpinKeyValueStorage {
+    async fn create_passkey(
+        &self,
+        _user_id: String,
+        _cred_id: &str,
+        _public_key: &str,
+        _name: &str,
+        _counter: i64,
+        _created_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn get_passkey(
+        &self,
+        _cred_id: &str,
+    ) -> Result<Option<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn list_passkeys(
+        &self,
+        _user_id: String,
+    ) -> Result<Vec<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn delete_passkey(
+        &self,
+        _user_id: String,
+        _cred_id: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn update_passkey_counter(
+        &self,
+        _cred_id: &str,
+        _new_counter: i64,
+        _last_used_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn update_passkey_name(
+        &self,
+        _cred_id: &str,
+        _new_name: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn save_state(
+        &self,
+        _id: &str,
+        _state_json: &str,
+        _expires_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn get_state(
+        &self,
+        _id: &str,
+    ) -> Result<Option<passkey_server::types::PasskeyState>, passkey_server::error::PasskeyError>
+    {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+
+    async fn delete_state(&self, _id: &str) -> Result<(), passkey_server::error::PasskeyError> {
+        Err(passkey_server::error::PasskeyError::DatabaseError(
+            "Spin KV is not supported on this platform".to_string(),
+        ))
+    }
+}
