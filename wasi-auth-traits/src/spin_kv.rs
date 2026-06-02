@@ -7,14 +7,14 @@ use crate::{AuthError, Session};
 ///
 /// | Data | Key pattern | Value |
 /// |------|-------------|-------|
-/// | Session | `session:{session_id}` | JSON-serialised [`Session`](crate::Session) |
+/// | Session | `session:{session_id}` | JSON-serialised [`Session`] |
 /// | OTP | `otp:{email}` | JSON-serialised `{otp, expires_at}` |
 ///
 /// # Platform Support
 ///
 /// This backend is only functional when compiled for `wasm32-wasi` targets and
 /// executed inside the Spin runtime. On native (non-WASI) platforms all trait
-/// methods return [`AuthError::StorageError`](crate::AuthError::StorageError).
+/// methods return [`AuthError::StorageError`].
 ///
 /// Requires the `spin` feature flag.
 #[cfg(feature = "spin")]

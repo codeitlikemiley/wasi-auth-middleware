@@ -27,7 +27,7 @@ use crate::{AuthError, Session};
 ///
 /// This backend is only functional when compiled for `wasm32-wasi` targets and
 /// executed inside the Spin runtime. On native (non-WASI) platforms all trait
-/// methods return [`AuthError::StorageError`](crate::AuthError::StorageError).
+/// methods return [`AuthError::StorageError`].
 ///
 /// Requires the `sqlite` feature flag.
 #[cfg(feature = "sqlite")]
@@ -47,7 +47,7 @@ impl Default for SQLiteStorage {
 impl SQLiteStorage {
     /// Creates a new `SQLiteStorage` that connects to the named Spin SQLite database.
     ///
-    /// On WASI targets the constructor automatically calls [`init_db`](Self::init_db)
+    /// On WASI targets the constructor automatically calls the internal init_db method
     /// to create the `sessions` and `otps` tables if they do not already exist.
     /// Initialization errors are logged to `stderr` but do **not** prevent
     /// construction.
