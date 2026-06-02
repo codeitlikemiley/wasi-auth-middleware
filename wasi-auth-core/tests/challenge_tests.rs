@@ -448,3 +448,189 @@ fn test_oauth_exchange_http_error() {
     let err_msg = res.unwrap_err().to_string();
     assert!(err_msg.contains("Network failure"));
 }
+
+#[cfg(feature = "passkey")]
+mod passkey_tests {
+    use base64::prelude::*;
+    use coset::{Algorithm, CborSerializable, CoseKey, KeyType, Label, iana};
+    use p256::SecretKey;
+    use p256::ecdsa::{SigningKey, VerifyingKey, signature::Signer};
+    use p256::elliptic_curve::rand_core::OsRng;
+    use sha2::{Digest, Sha256};
+    use wasi_auth_core::passkey::*;
+    use wasi_auth_traits::InMemoryStorage;
+
+    fn make_client_data(challenge: &str, origin: &str, type_: &str) -> String {
+        let json = serde_json::json!({
+            "challenge": challenge,
+            "origin": origin,
+            "type": type_,
+        });
+        let bytes = serde_json::to_vec(&json).unwrap();
+        BASE64_URL_SAFE_NO_PAD.encode(bytes)
+    }
+
+    fn make_cose_key(public_key: &VerifyingKey) -> Vec<u8> {
+        let encoded = public_key.to_encoded_point(false);
+        let x = encoded.x().unwrap().as_slice();
+        let y = encoded.y().unwrap().as_slice();
+
+        let key = CoseKey {
+            kty: KeyType::Assigned(iana::KeyType::EC2),
+            key_id: vec![],
+            alg: Some(Algorithm::Assigned(iana::Algorithm::ES256)),
+            key_ops: Default::default(),
+            base_iv: vec![],
+            params: vec![
+                (Label::Int(-1), coset::cbor::value::Value::Integer(1.into())), // P-256
+                (Label::Int(-2), coset::cbor::value::Value::Bytes(x.to_vec())), // x
+                (Label::Int(-3), coset::cbor::value::Value::Bytes(y.to_vec())), // y
+            ],
+        };
+        key.to_vec().unwrap()
+    }
+
+    fn make_auth_data(
+        rp_id: &str,
+        flags: u8,
+        counter: u32,
+        cred_id: Option<&[u8]>,
+        public_key: Option<&[u8]>,
+    ) -> Vec<u8> {
+        let mut buf = Vec::new();
+        let hash = Sha256::digest(rp_id.as_bytes());
+        buf.extend_from_slice(&hash);
+        buf.push(flags);
+        buf.extend_from_slice(&counter.to_be_bytes());
+
+        if let (Some(cid), Some(pk)) = (cred_id, public_key) {
+            buf.extend_from_slice(&[0u8; 16]); // AAGUID
+            buf.extend_from_slice(&(cid.len() as u16).to_be_bytes());
+            buf.extend_from_slice(cid);
+            buf.extend_from_slice(pk);
+        }
+        buf
+    }
+
+    fn make_attestation_object(auth_data: &[u8]) -> String {
+        let map = ciborium::value::Value::Map(vec![
+            (
+                ciborium::value::Value::Text("fmt".to_string()),
+                ciborium::value::Value::Text("none".to_string()),
+            ),
+            (
+                ciborium::value::Value::Text("attStmt".to_string()),
+                ciborium::value::Value::Map(vec![]),
+            ),
+            (
+                ciborium::value::Value::Text("authData".to_string()),
+                ciborium::value::Value::Bytes(auth_data.to_vec()),
+            ),
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(&map, &mut bytes).unwrap();
+        BASE64_URL_SAFE_NO_PAD.encode(bytes)
+    }
+
+    #[tokio::test]
+    async fn test_passkey_e2e_flow() {
+        let store = InMemoryStorage::new();
+        let user_id = "user123";
+        let username = "testuser";
+        let display_name = "Test User";
+        let origin = "https://example.com";
+        let rp_id = "example.com";
+
+        let config = PasskeyConfig {
+            rp_id: rp_id.to_string(),
+            rp_name: "Test RP".to_string(),
+            origin: origin.to_string(),
+            state_ttl: 300,
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        // 1. Start registration
+        let options =
+            start_passkey_registration(&store, user_id, username, display_name, &config, now)
+                .await
+                .expect("start_passkey_registration failed");
+
+        // 2. Prepare Client Response
+        let challenge = options.challenge;
+        let client_data_json = make_client_data(&challenge, origin, "webauthn.create");
+
+        let secret_key = SecretKey::random(&mut OsRng);
+        let signing_key = SigningKey::from(secret_key);
+        let public_key = VerifyingKey::from(&signing_key);
+        let cose_key = make_cose_key(&public_key);
+
+        let cred_id = b"cred123";
+
+        let auth_data = make_auth_data(rp_id, 0x41, 0, Some(cred_id), Some(&cose_key));
+        let attestation_object = make_attestation_object(&auth_data);
+
+        let response = RegistrationResponse {
+            id: BASE64_URL_SAFE_NO_PAD.encode(cred_id),
+            raw_id: BASE64_URL_SAFE_NO_PAD.encode(cred_id),
+            type_: "public-key".to_string(),
+            response: AttestationResponse {
+                client_data_json,
+                attestation_object,
+            },
+            client_extension_results: None,
+            name: Some("My Passkey".to_string()),
+        };
+
+        // 3. Finish registration
+        finish_passkey_registration(&store, user_id, &config, response, now)
+            .await
+            .expect("finish_passkey_registration failed");
+
+        // 4. Start login
+        let login_options = start_passkey_login(&store, &config, now)
+            .await
+            .expect("start_passkey_login failed");
+
+        // 5. Prepare Client Login Response
+        let login_challenge = login_options.challenge;
+        let login_client_data_json = make_client_data(&login_challenge, origin, "webauthn.get");
+        let login_client_data_bytes = BASE64_URL_SAFE_NO_PAD
+            .decode(&login_client_data_json)
+            .unwrap();
+
+        let login_auth_data = make_auth_data(rp_id, 0x01, 1, None, None);
+
+        let login_client_data_hash = Sha256::digest(&login_client_data_bytes);
+        let mut signed_data = Vec::new();
+        signed_data.extend_from_slice(&login_auth_data);
+        signed_data.extend_from_slice(&login_client_data_hash);
+
+        let signature: p256::ecdsa::Signature = signing_key.sign(&signed_data);
+        let signature_der = signature.to_der();
+        let signature_b64 = BASE64_URL_SAFE_NO_PAD.encode(signature_der.as_bytes());
+
+        let login_response = LoginResponse {
+            id: BASE64_URL_SAFE_NO_PAD.encode(cred_id),
+            raw_id: BASE64_URL_SAFE_NO_PAD.encode(cred_id),
+            type_: "public-key".to_string(),
+            response: AssertionResponse {
+                client_data_json: login_client_data_json,
+                authenticator_data: BASE64_URL_SAFE_NO_PAD.encode(&login_auth_data),
+                signature: signature_b64,
+                user_handle: Some(BASE64_URL_SAFE_NO_PAD.encode(user_id.as_bytes())),
+            },
+            client_extension_results: None,
+        };
+
+        // 6. Finish login
+        let auth_user_id = finish_passkey_login(&store, &config, login_response, now)
+            .await
+            .expect("finish_passkey_login failed");
+
+        assert_eq!(auth_user_id, user_id);
+    }
+}

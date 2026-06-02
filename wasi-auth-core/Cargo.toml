@@ -14,6 +14,7 @@ authors = ["Uriah Galang"]
 
 [dependencies]
 wasi-auth-traits = { version = "0.1.0", path = "../wasi-auth-traits" }
+passkey-server = { version = "0.1.4", optional = true }
 tracing = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
@@ -26,6 +27,15 @@ sha2.workspace = true
 sha1.workspace = true
 hmac.workspace = true
 urlencoding.workspace = true
+
+[features]
+default = []
+passkey = ["dep:passkey-server", "wasi-auth-traits/passkey"]
+
 [dev-dependencies]
 wasi-auth-traits = { path = "../wasi-auth-traits", features = ["spin", "sqlite", "http-email"] }
 wasi-auth-providers = { path = "../wasi-auth-providers", features = ["all"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
+p256 = { version = "0.13.2", features = ["ecdsa"] }
+coset = "0.4.2"
+ciborium = "0.2.2"

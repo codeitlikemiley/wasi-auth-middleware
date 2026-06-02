@@ -30,6 +30,9 @@ pub mod oauth;
 pub mod otp;
 pub mod totp;
 
+#[cfg(feature = "passkey")]
+pub mod passkey;
+
 pub use jwt::{
     Claims, ValidationOptions, extract_kid, generate_jwt, verify_jwt, verify_jwt_with_options,
 };
@@ -40,6 +43,13 @@ pub use totp::{generate_totp_secret, generate_totp_uri, verify_totp};
 pub use wasi_auth_traits::{
     AuthError, AuthStorage, EmailSender, InMemoryRateLimiter, InMemoryStorage, RateLimiter,
     Session, StdoutEmail,
+};
+
+#[cfg(feature = "passkey")]
+pub use passkey::{
+    LoginResponse, PasskeyConfig, PasskeyState, PasskeyStore, PublicKeyCredentialCreationOptions,
+    PublicKeyCredentialRequestOptions, RegistrationResponse, StoredPasskey, finish_passkey_login,
+    finish_passkey_registration, start_passkey_login, start_passkey_registration,
 };
 
 /// Extracts the value of a cookie with the given `name` from a raw
