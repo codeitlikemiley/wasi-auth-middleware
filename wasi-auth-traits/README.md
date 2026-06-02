@@ -65,3 +65,93 @@ Represents an active, authenticated user session carrying user ID, roles, and ex
 - **`InMemoryStorage`** — A thread-safe, in-memory (`RwLock<HashMap>`) storage implementation, perfect for testing and local development.
 - **`InMemoryRateLimiter`** — A thread-safe sliding window rate limiter backed by in-memory history.
 - **`StdoutEmail`** — An email sender that writes messages to standard output (useful during development).
+
+## Usage & Implementation Guide
+
+### 1. Initializing and Using Provided Drivers
+
+Here is an example showing how to initialize `InMemoryStorage` and `StdoutEmail`, which are available out of the box:
+
+```rust,ignore
+use wasi_auth_traits::{AuthStorage, EmailSender, InMemoryStorage, StdoutEmail};
+
+fn main() -> Result<(), wasi_auth_traits::AuthError> {
+    // 1. Initialize thread-safe in-memory storage
+    let storage = InMemoryStorage::new();
+
+    // 2. Store a session (expires in 1 hour)
+    let expires_at = chrono::Utc::now().timestamp() as u64 + 3600;
+    storage.store_session(
+        "session_id_123",
+        "user_alice",
+        &["user".to_string(), "admin".to_string()],
+        expires_at
+    )?;
+
+    // 3. Retrieve and inspect the session
+    if let Some(session) = storage.get_session("session_id_123")? {
+        println!("User: {}, Roles: {:?}", session.user_id, session.roles);
+    }
+
+    // 4. Initialize StdoutEmail sender
+    let email_sender = StdoutEmail::new();
+    email_sender.send_email(
+        "alice@example.com",
+        "Your Verification Code",
+        "Welcome! Your code is 556677."
+    )?;
+
+    Ok(())
+}
+```
+
+### 2. Implementing a Custom Storage Driver (e.g. Postgres/Redis)
+
+You can plug in your own database backend by implementing the `AuthStorage` trait. Below is a simplified example implementing the trait for a hypothetical database connection:
+
+```rust,ignore
+use wasi_auth_traits::{AuthStorage, AuthError, Session};
+
+pub struct MyDbStorage {
+    // db_pool: DbPool,
+}
+
+impl AuthStorage for MyDbStorage {
+    fn store_session(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        roles: &[String],
+        expires_at: u64,
+    ) -> Result<(), AuthError> {
+        // Run SQL query:
+        // "INSERT INTO sessions (id, user_id, roles, expires_at) VALUES ($1, $2, $3, $4)"
+        Ok(())
+    }
+
+    fn get_session(&self, session_id: &str) -> Result<Option<Session>, AuthError> {
+        // Run SQL query:
+        // "SELECT user_id, roles, expires_at FROM sessions WHERE id = $1"
+        // and return Session on match
+        Ok(None)
+    }
+
+    fn delete_session(&self, session_id: &str) -> Result<(), AuthError> {
+        // Run SQL query:
+        // "DELETE FROM sessions WHERE id = $1"
+        Ok(())
+    }
+
+    fn store_otp(&self, email: &str, otp: &str, expires_at: u64) -> Result<(), AuthError> {
+        // Run SQL query to insert hashed OTP
+        Ok(())
+    }
+
+    fn verify_otp(&self, email: &str, otp: &str) -> Result<bool, AuthError> {
+        // Fetch and check OTP hash
+        Ok(true)
+    }
+
+    // Include other optional methods if using TOTP, Passkeys, etc.
+}
+```
