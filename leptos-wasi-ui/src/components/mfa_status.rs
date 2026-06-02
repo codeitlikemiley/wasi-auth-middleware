@@ -9,6 +9,10 @@ const DEFAULT_BUTTON_STYLE: &str = "background: rgba(239, 68, 68, 0.15); border:
 const DEFAULT_BADGE_STYLE_ENABLED: &str = "background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); color: #34d399; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 16px;";
 const DEFAULT_BADGE_STYLE_DISABLED: &str = "background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 16px;";
 
+/// A UI card displaying the user's Multi-Factor Authentication (MFA) status.
+///
+/// Indicates whether TOTP MFA is currently enabled or disabled. If enabled,
+/// it displays a button to disable MFA by calling the `on_disable` callback.
 #[component]
 pub fn MfaStatus(
     #[prop(optional, into)] class: Option<TextProp>,

@@ -337,6 +337,11 @@ where
     }
 }
 
+/// A button component that triggers WebAuthn passkey registration.
+///
+/// Under hydration or CSR features in the browser, clicking the button invokes
+/// `navigator.credentials.create` with options provided by the `options` signal.
+/// Results are dispatched via `on_register_success` or `on_register_error`.
 #[component]
 pub fn PasskeyRegisterButton(
     #[prop(optional, into)] class: Option<TextProp>,
@@ -371,6 +376,11 @@ pub fn PasskeyRegisterButton(
     }
 }
 
+/// A button component that triggers WebAuthn passkey login authentication.
+///
+/// Under hydration or CSR features in the browser, clicking the button invokes
+/// `navigator.credentials.get` with options provided by the `options` signal.
+/// Results are dispatched via `on_login_success` or `on_login_error`.
 #[component]
 pub fn PasskeyLoginButton(
     #[prop(optional, into)] class: Option<TextProp>,

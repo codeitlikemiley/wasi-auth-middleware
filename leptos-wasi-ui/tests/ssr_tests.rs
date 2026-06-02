@@ -1,12 +1,12 @@
 #[cfg(feature = "ssr")]
 mod tests {
     use leptos::prelude::*;
-    use leptos_wasi_ui::{
-        LoginForm, MagicLinkForm, OtpForm, PasskeyLoginButton, PasskeyRegisterButton, TotpSetup,
-        SessionList, MfaStatus,
-    };
     #[cfg(feature = "passkey")]
     use leptos_wasi_ui::PasskeyList;
+    use leptos_wasi_ui::{
+        LoginForm, MagicLinkForm, MfaStatus, OtpForm, PasskeyLoginButton, PasskeyRegisterButton,
+        SessionList, TotpSetup,
+    };
 
     fn init_executor() {
         static INIT: std::sync::Once = std::sync::Once::new();
@@ -737,14 +737,12 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let sessions = vec![
-                wasi_auth_traits::Session {
-                    session_id: "test-session-12345".to_string(),
-                    user_id: "user-1".to_string(),
-                    roles: vec!["admin".to_string()],
-                    expires_at: 9999999999,
-                }
-            ];
+            let sessions = vec![wasi_auth_traits::Session {
+                session_id: "test-session-12345".to_string(),
+                user_id: "user-1".to_string(),
+                roles: vec!["admin".to_string()],
+                expires_at: 9999999999,
+            }];
             let (sessions_signal, _) = signal(sessions);
             let (current_session_id, _) = signal(Some("test-session-12345".to_string()));
             let (revoke_pending, _) = signal(false);
@@ -808,17 +806,15 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let passkeys = vec![
-                wasi_auth_core::passkey::StoredPasskey {
-                    user_id: "user-1".to_string(),
-                    cred_id: "cred_1".to_string(),
-                    public_key: "dummy_pk".to_string(),
-                    name: "My Macbook".to_string(),
-                    created_at: 1700000000000,
-                    last_used_at: 1700005000000,
-                    counter: 0,
-                },
-            ];
+            let passkeys = vec![wasi_auth_core::passkey::StoredPasskey {
+                user_id: "user-1".to_string(),
+                cred_id: "cred_1".to_string(),
+                public_key: "dummy_pk".to_string(),
+                name: "My Macbook".to_string(),
+                created_at: 1700000000000,
+                last_used_at: 1700005000000,
+                counter: 0,
+            }];
             let (passkeys_signal, _) = signal(passkeys);
             let (pending_signal, _) = signal(false);
             let on_delete = Callback::new(|_| {});
@@ -874,14 +870,12 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let sessions = vec![
-                wasi_auth_traits::Session {
-                    session_id: "🔑a🔑b🔑c🔑d🔑e🔑".to_string(),
-                    user_id: "user-1".to_string(),
-                    roles: vec![],
-                    expires_at: 1700000000,
-                }
-            ];
+            let sessions = vec![wasi_auth_traits::Session {
+                session_id: "🔑a🔑b🔑c🔑d🔑e🔑".to_string(),
+                user_id: "user-1".to_string(),
+                roles: vec![],
+                expires_at: 1700000000,
+            }];
             let (sessions_signal, _) = signal(sessions);
             let (current_session_id, _) = signal(None);
             let (revoke_pending, _) = signal(false);
@@ -908,14 +902,12 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let sessions = vec![
-                wasi_auth_traits::Session {
-                    session_id: "session-ok".to_string(),
-                    user_id: "user-1".to_string(),
-                    roles: vec![],
-                    expires_at: 32503680000,
-                }
-            ];
+            let sessions = vec![wasi_auth_traits::Session {
+                session_id: "session-ok".to_string(),
+                user_id: "user-1".to_string(),
+                roles: vec![],
+                expires_at: 32503680000,
+            }];
             let (sessions_signal, _) = signal(sessions);
             let (current_session_id, _) = signal(None);
             let (revoke_pending, _) = signal(false);
@@ -1021,14 +1013,12 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let sessions = vec![
-                wasi_auth_traits::Session {
-                    session_id: "test-session-12345".to_string(),
-                    user_id: "user-1".to_string(),
-                    roles: vec![],
-                    expires_at: u64::MAX,
-                }
-            ];
+            let sessions = vec![wasi_auth_traits::Session {
+                session_id: "test-session-12345".to_string(),
+                user_id: "user-1".to_string(),
+                roles: vec![],
+                expires_at: u64::MAX,
+            }];
             let (sessions_signal, _) = signal(sessions);
             let (current_session_id, _) = signal(None);
             let (revoke_pending, _) = signal(false);
@@ -1057,17 +1047,15 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let passkeys = vec![
-                wasi_auth_core::passkey::StoredPasskey {
-                    user_id: "user-1".to_string(),
-                    cred_id: "cred_1".to_string(),
-                    public_key: "dummy_pk".to_string(),
-                    name: "My Macbook".to_string(),
-                    created_at: i64::MAX,
-                    last_used_at: 0,
-                    counter: 0,
-                },
-            ];
+            let passkeys = vec![wasi_auth_core::passkey::StoredPasskey {
+                user_id: "user-1".to_string(),
+                cred_id: "cred_1".to_string(),
+                public_key: "dummy_pk".to_string(),
+                name: "My Macbook".to_string(),
+                created_at: i64::MAX,
+                last_used_at: 0,
+                counter: 0,
+            }];
             let (passkeys_signal, _) = signal(passkeys);
             let (pending_signal, _) = signal(false);
             let on_delete = Callback::new(|_| {});
@@ -1093,14 +1081,12 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let sessions = vec![
-                wasi_auth_traits::Session {
-                    session_id: "test-session-123".to_string(),
-                    user_id: "user-1".to_string(),
-                    roles: vec![],
-                    expires_at: 1700000000,
-                }
-            ];
+            let sessions = vec![wasi_auth_traits::Session {
+                session_id: "test-session-123".to_string(),
+                user_id: "user-1".to_string(),
+                roles: vec![],
+                expires_at: 1700000000,
+            }];
             let (sessions_signal, _) = signal(sessions);
             let (current_session_id, _) = signal(None);
             let (revoke_pending, _) = signal(false);
@@ -1182,16 +1168,15 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let sessions = vec![
-                wasi_auth_traits::Session {
-                    session_id: "session-1".to_string(),
-                    user_id: "user-1".to_string(),
-                    roles: vec![],
-                    expires_at: 1700000000,
-                }
-            ];
+            let sessions = vec![wasi_auth_traits::Session {
+                session_id: "session-1".to_string(),
+                user_id: "user-1".to_string(),
+                roles: vec![],
+                expires_at: 1700000000,
+            }];
             let (sessions_signal, _) = signal(sessions);
-            let (current_session_id, set_current_session_id) = signal(Some("session-1".to_string()));
+            let (current_session_id, set_current_session_id) =
+                signal(Some("session-1".to_string()));
             let (revoke_pending, _) = signal(false);
             let (revoke_result, _) = signal(None);
             let on_revoke = Callback::new(|_| {});
@@ -1234,17 +1219,15 @@ mod tests {
         init_executor();
         let owner = Owner::new();
         owner.with(|| {
-            let passkeys = vec![
-                wasi_auth_core::passkey::StoredPasskey {
-                    user_id: "user-1".to_string(),
-                    cred_id: "cred_1".to_string(),
-                    public_key: "dummy_pk".to_string(),
-                    name: "My Macbook".to_string(),
-                    created_at: 1700000000000,
-                    last_used_at: 0,
-                    counter: 0,
-                },
-            ];
+            let passkeys = vec![wasi_auth_core::passkey::StoredPasskey {
+                user_id: "user-1".to_string(),
+                cred_id: "cred_1".to_string(),
+                public_key: "dummy_pk".to_string(),
+                name: "My Macbook".to_string(),
+                created_at: 1700000000000,
+                last_used_at: 0,
+                counter: 0,
+            }];
             let (passkeys_signal, _) = signal(passkeys);
             let (pending_signal, _) = signal(true);
             let on_delete = Callback::new(|_| {});
@@ -1265,4 +1248,3 @@ mod tests {
         });
     }
 }
-

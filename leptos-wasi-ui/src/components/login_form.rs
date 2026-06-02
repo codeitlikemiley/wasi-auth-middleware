@@ -9,18 +9,32 @@ const DEFAULT_INPUT_STYLE: &str = "background: rgba(255, 255, 255, 0.05); border
 const DEFAULT_BUTTON_CLASS: &str = "wasi-auth-button";
 const DEFAULT_BUTTON_STYLE: &str = "background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 10px 16px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px;";
 
+/// Data submitted when verifying a One-Time Password (OTP) login attempt.
 #[derive(Clone, Debug)]
 pub struct OtpVerification {
+    /// The user's email address.
     pub email: String,
+    /// The 6-digit verification code sent to the user's email.
     pub code: String,
 }
 
+/// Data submitted when verifying a Multi-Factor Authentication (MFA) TOTP code.
 #[derive(Clone, Debug)]
 pub struct TotpVerification {
+    /// The user's email address.
     pub email: String,
+    /// The current 6-digit TOTP code from their authenticator application.
     pub code: String,
 }
 
+/// A comprehensive tabbed sign-in form supporting Email OTP, Magic Link, and TOTP MFA.
+///
+/// This component provides interactive panels for:
+/// 1. Email OTP login (requesting and submitting verification codes).
+/// 2. Passwordless Magic Link requests.
+/// 3. MFA TOTP verification.
+///
+/// It also renders a Passkey login button and OAuth provider credentials options.
 #[component]
 pub fn LoginForm(
     #[prop(optional, into)] class: Option<TextProp>,

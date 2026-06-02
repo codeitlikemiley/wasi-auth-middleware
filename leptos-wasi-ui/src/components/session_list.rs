@@ -95,7 +95,7 @@ fn format_timestamp(mut secs: u64) -> String {
     let hours = seconds_in_day / 3600;
     let minutes = (seconds_in_day % 3600) / 60;
     let seconds = seconds_in_day % 60;
-    
+
     let mut year = 1970;
     let mut days_left = days;
     loop {
@@ -107,14 +107,14 @@ fn format_timestamp(mut secs: u64) -> String {
         days_left -= days_in_year;
         year += 1;
     }
-    
+
     let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     let month_days = if is_leap {
         [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
-    
+
     let mut month = 1;
     for &d in month_days.iter() {
         if days_left < d {
@@ -124,30 +124,43 @@ fn format_timestamp(mut secs: u64) -> String {
         month += 1;
     }
     let day = days_left + 1;
-    format!("Expires: {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", year, month, day, hours, minutes, seconds)
+    format!(
+        "Expires: {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        year, month, day, hours, minutes, seconds
+    )
 }
 
+/// A list component for managing active user sessions.
+///
+/// Renders active sessions along with metadata (expiry, roles) and highlights
+/// the current browser session. Enables revoking a single session or revoking all
+/// other sessions in bulk if the `on_revoke_all` callback is supplied.
 #[component]
 pub fn SessionList(
     #[prop(optional, into)] class: Option<TextProp>,
     #[prop(optional, into)] style: Option<TextProp>,
-    
+
     /// List of sessions to display
-    #[prop(into)] sessions: Signal<Vec<wasi_auth_traits::Session>>,
+    #[prop(into)]
+    sessions: Signal<Vec<wasi_auth_traits::Session>>,
     /// Unique identifier of the current active browser session
-    #[prop(into, optional)] current_session_id: Option<Signal<Option<String>>>,
-    
+    #[prop(into, optional)]
+    current_session_id: Option<Signal<Option<String>>>,
+
     /// Revocation callback for single sessions
     on_revoke: Callback<String>,
     /// Revocation callback for other sessions (bulk)
-    #[prop(optional)] on_revoke_all: Option<Callback<()>>,
-    
+    #[prop(optional)]
+    on_revoke_all: Option<Callback<()>>,
+
     /// Signals for tracking active operations and outcomes
-    #[prop(into)] revoke_pending: Signal<bool>,
+    #[prop(into)]
+    revoke_pending: Signal<bool>,
     #[prop(into)] revoke_result: Signal<Option<Result<(), String>>>,
-    
+
     /// Style override flag
-    #[prop(optional, default = true)] use_default_styles: bool,
+    #[prop(optional, default = true)]
+    use_default_styles: bool,
 ) -> impl IntoView {
     let merged_class = move || {
         let user_class = class

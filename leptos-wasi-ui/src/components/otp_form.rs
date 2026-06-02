@@ -9,6 +9,10 @@ const DEFAULT_INPUT_STYLE: &str = "background: rgba(255, 255, 255, 0.05); border
 const DEFAULT_BUTTON_CLASS: &str = "wasi-auth-button";
 const DEFAULT_BUTTON_STYLE: &str = "background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 10px 16px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px;";
 
+/// A step-by-step form for requesting and verifying One-Time Passwords (OTP).
+///
+/// Phase 1: Request OTP - user submits email via `on_request` callback.
+/// Phase 2: Verify OTP - user inputs the 6-digit code received and submits via `on_verify`.
 #[component]
 pub fn OtpForm(
     #[prop(optional, into)] class: Option<TextProp>,

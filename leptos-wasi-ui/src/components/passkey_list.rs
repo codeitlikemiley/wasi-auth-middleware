@@ -15,7 +15,7 @@ fn format_date(timestamp_ms: i64) -> String {
     let hours = seconds_in_day / 3600;
     let minutes = (seconds_in_day % 3600) / 60;
     let seconds = seconds_in_day % 60;
-    
+
     let mut year = 1970;
     let mut days_left = days;
     loop {
@@ -27,14 +27,14 @@ fn format_date(timestamp_ms: i64) -> String {
         days_left -= days_in_year;
         year += 1;
     }
-    
+
     let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     let month_days = if is_leap {
         [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
-    
+
     let mut month = 1;
     for &d in month_days.iter() {
         if days_left < d {
@@ -44,23 +44,34 @@ fn format_date(timestamp_ms: i64) -> String {
         month += 1;
     }
     let day = days_left + 1;
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", year, month, day, hours, minutes, seconds)
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        year, month, day, hours, minutes, seconds
+    )
 }
 
+/// A list component showing the user's registered passkeys (requires the `passkey` feature).
+///
+/// Provides inline controls for renaming passkeys (via `on_rename` callback)
+/// and deleting/revoking passkeys (via `on_delete` callback). Supports confirmation flows
+/// and displays operation results dynamically.
 #[component]
 pub fn PasskeyList(
     #[prop(optional, into)] class: Option<TextProp>,
     #[prop(optional, into)] style: Option<TextProp>,
     /// The reactive signal providing the user's registered passkeys.
-    #[prop(into)] passkeys: Signal<Vec<wasi_auth_core::passkey::StoredPasskey>>,
+    #[prop(into)]
+    passkeys: Signal<Vec<wasi_auth_core::passkey::StoredPasskey>>,
     /// Callback triggered when a passkey deletion is confirmed. Returns the `cred_id`.
     on_delete: Callback<String>,
     /// Callback triggered when a passkey rename is saved. Returns `(cred_id, new_name)`.
     on_rename: Callback<(String, String)>,
     /// Optional global loading/pending state.
-    #[prop(into, optional)] pending: Option<Signal<bool>>,
+    #[prop(into, optional)]
+    pending: Option<Signal<bool>>,
     /// If true, inject the default premium glassmorphism styling.
-    #[prop(optional, default = true)] use_default_styles: bool,
+    #[prop(optional, default = true)]
+    use_default_styles: bool,
     #[prop(into, optional)] rename_result: Option<Signal<Option<Result<(), String>>>>,
     #[prop(into, optional)] delete_result: Option<Signal<Option<Result<(), String>>>>,
 ) -> impl IntoView {
@@ -100,7 +111,10 @@ pub fn PasskeyList(
                 .as_ref()
                 .map(|s| format!("; {}", s.get()))
                 .unwrap_or_default();
-            format!("background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 24px; color: #f9fafb; font-family: sans-serif; max-width: 500px; width: 100%; box-sizing: border-box;{}", user_style)
+            format!(
+                "background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3); border-radius: 12px; padding: 24px; color: #f9fafb; font-family: sans-serif; max-width: 500px; width: 100%; box-sizing: border-box;{}",
+                user_style
+            )
         } else {
             style
                 .as_ref()
