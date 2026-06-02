@@ -84,8 +84,10 @@ The following crate versions are required for WASI compatibility:
 ```
 wasi-auth-middleware/
 ├── wasi-auth-traits/          # Core trait abstractions & storage backends
-├── wasi-auth-core/            # JWT engine, OAuth2 client, OTP flows
+├── wasi-auth-core/            # JWT engine, OAuth2 client, OTP & WebAuthn flows
 ├── leptos-wasi-auth/          # Leptos framework integration
+├── wasi-auth-providers/       # OAuth2 client configurations & presets
+├── leptos-wasi-ui/            # Configurable Leptos UI auth components
 ├── wasi-auth-interceptor/     # Standalone WASI HTTP proxy middleware
 ├── examples/
 │   └── leptos-auth-demo/      # Example Leptos SSR app with auth
@@ -98,43 +100,79 @@ wasi-auth-middleware/
 
 Defines the core abstractions that all other crates depend on:
 
-- **`AuthStorage`** trait — session, OTP, TOTP secret, and JTI blacklist persistence (store, get, delete, verify)
-- **`EmailSender`** trait — email delivery abstraction
+- **`AuthStorage`** trait — session, OTP, TOTP secret, and JTI blacklist persistence (store, get, delete, verify).
+- **`EmailSender`** trait — email delivery abstraction.
+- **`RateLimiter`** trait & **`InMemoryRateLimiter`** APIs — thread-safe sliding window rate-limiting for OTP dispatches and login requests:
+  - `check_rate_limit(key, action)`: Checks if an action is allowed within the window.
+  - `record_action(key, action)`: Increments the rate limit counter and logs the attempt.
+  - Preconfigured actions: `"send_otp"` (default limit: 5), `"verify_otp"` (default limit: 10).
 - **Backends:**
-  - `InMemoryStorage` — thread-safe `RwLock<HashMap>` (always available)
-  - `SpinKeyValueStorage` — Spin SDK key-value store (feature: `spin`)
-  - `SQLiteStorage` — Spin SDK SQLite (feature: `sqlite`)
-  - `StdoutEmail` — prints to stdout (development)
-  - `HttpEmail` — sends via HTTP POST (feature: `http-email`)
+  - `InMemoryStorage` — thread-safe `RwLock<HashMap>` (always available).
+  - `SpinKeyValueStorage` — Spin SDK key-value store (feature: `spin`).
+  - `SQLiteStorage` — Spin SDK SQLite database (feature: `sqlite`).
+  - `StdoutEmail` — prints to stdout (development).
+  - `HttpEmail` — sends via HTTP POST (feature: `http-email`).
 
 ### `wasi-auth-core`
 
-The authentication engine:
+The core authentication engine:
 
-- **JWT** — pure-Rust RS256 JWT generation and verification using `rsa` + `sha2` (no `jsonwebtoken` crate)
-- **OAuth2** — client for authorization code flow, token exchange, userinfo, and OIDC discovery
-- **OTP** — 6-digit email one-time password generation, storage, and verification
-- **TOTP** — Time-based One-Time Passwords (RFC 6238) with ±1 step drift tolerance and Base32 encoding/decoding
-- **Magic Links** — passwordless signed JWT login with single-use replay protection via JTI blacklisting
+- **JWT** — pure-Rust RS256 JWT generation and verification using `rsa` + `sha2` (no `jsonwebtoken` crate dependencies on WebAssembly).
+- **OAuth2** — client for authorization code flow, token exchange, userinfo, and OIDC discovery.
+- **OTP** — 6-digit email one-time password generation, storage, and verification.
+- **TOTP** — Time-based One-Time Passwords (RFC 6238) with ±1 step drift tolerance and Base32 encoding/decoding.
+- **Magic Links** — passwordless signed JWT login with single-use replay protection via JTI blacklisting.
+- **Passkey WebAuthn APIs** — Helper functions wrapping the `passkey-server` engine to integrate WebAuthn:
+  - `start_passkey_registration(store, user_id, username, display_name, config, now_ms)`: Generates registration challenge options.
+  - `finish_passkey_registration(store, user_id, config, response, now_ms)`: Cryptographically verifies the registration response and persists the credential.
+  - `start_passkey_login(store, config, now_ms)`: Generates login assertion options.
+  - `finish_passkey_login(store, config, response, now_ms)`: Validates the assertions, checks the signature counter (preventing cloning attacks), and returns the user ID.
 
 ### `leptos-wasi-auth`
 
 Integrates the auth framework with [Leptos](https://leptos.dev):
 
 - **Dual-mode authentication:**
-  - *Gateway mode* — trusts `X-User-*` headers injected by the interceptor
-  - *Library mode* — directly extracts and verifies JWT from cookies or `Authorization` header
-- **Leptos context** — `provide_session_context()`, `expect_session()`, `expect_role()` guards
-- **Feature flags:** `ssr` (default), `hydrate`, `csr`, `unsafe-dev-fallback`, `leptos`
+  - *Gateway mode* — trusts `X-User-*` headers injected by the interceptor.
+  - *Library mode* — directly extracts and verifies JWT from cookies or `Authorization` header.
+- **Leptos context** — `provide_session_context()`, `expect_session()`, `expect_role()` guards.
+- **Feature flags:** `ssr` (default), `hydrate`, `csr`, `unsafe-dev-fallback`, `leptos`.
+
+### `wasi-auth-providers`
+
+Provides ready-to-use client presets for external OIDC/OAuth2 integrations:
+
+- **Client Presets**: Google (`google::google`), GitHub (`github::github`), Apple (`apple::apple`), Microsoft (`microsoft::microsoft`), Facebook (`facebook::facebook`), Discord (`discord::discord`), X (`x::x`), and Keycloak (`keycloak::keycloak`).
+- **Feature Flags**: Add presets selectively using features: `google`, `github`, `apple`, `microsoft`, `facebook`, `discord`, `x`, `keycloak`, or `all` to enable all presets.
+- **Mock & Custom Integrations**: Supports local debugging against the `mock-auth-server` and custom database backends (e.g. SQLite, Spin KV) via storage traits.
+
+### `leptos-wasi-ui`
+
+Premium, configurable, styled Leptos components for authentication workflows:
+
+- **UI Components**:
+  - `LoginForm`: A tabbed sign-in component supporting Email OTP, Magic Link request, and MFA TOTP verification. It can also render passkey login and OAuth provider buttons.
+  - `OtpForm`: A code entry form that requests and verifies One-Time Passwords.
+  - `MagicLinkForm`: Request form for passwordless magic links.
+  - `TotpSetup`: A step-by-step wizard showing secrets, provisioning URI/QR data, and verifying the initial code.
+  - `MfaStatus`: Displays active MFA status (enabled/disabled) with action callbacks.
+  - `SessionList`: Lists active user sessions and provides a "revoke" button.
+  - `PasskeyRegisterButton` / `PasskeyLoginButton`: Buttons that trigger browser WebAuthn ceremonies (using JS/WASM interop).
+  - `PasskeyList` (under the `passkey` feature): Lists registered passkeys, allowing rename and deletion operations.
+- **Feature Flags**:
+  - `ssr`: Server-side rendering support.
+  - `hydrate`: WebAuthn browser API linking during client-side hydration.
+  - `csr`: Client-side rendering support.
+  - `passkey`: Enables passkey management list and integrations.
 
 ### `wasi-auth-interceptor`
 
 Standalone WASI HTTP middleware component:
 
-- Exports and imports `wasi:http/incoming-handler@0.2.9`
-- Composable via `wac plug` with any downstream WASI component
-- Strips, validates, and injects authentication headers
-- Configurable via environment variables
+- Exports and imports `wasi:http/incoming-handler@0.2.9`.
+- Composable via `wac plug` with any downstream WASI component.
+- Strips, validates, and injects authentication headers.
+- Configurable via environment variables and TOML configurations.
 
 ## Quick Start
 
@@ -181,18 +219,44 @@ just check
 just example <name>
 ```
 
-## Environment Variables
+## Configuration & Environment Variables
 
 ### Interceptor (`wasi-auth-interceptor`)
 
-| Variable           | Required | Description                                                  |
-|--------------------|----------|--------------------------------------------------------------|
-| `JWT_PUBLIC_KEY`   | No*      | PEM-encoded RSA public key for JWT verification              |
-| `JWT_AUDIENCE`     | No*      | Expected JWT `aud` claim value                               |
-| `JWT_ISSUER`       | No*      | Expected JWT `iss` claim value                               |
+The interceptor reads configuration from environment variables and an optional TOML configuration file.
 
-> \* When all three are unset, the interceptor falls back to **unsafe JWT parsing** — it decodes the
-> payload without signature verification but still checks expiration. This is intended for development only.
+#### Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `JWT_PUBLIC_KEY` | No* | None | PEM-encoded RSA public key for cryptographic signature verification. |
+| `JWT_AUDIENCE` | No* | None | Expected JWT `aud` claim value. |
+| `JWT_ISSUER` | No* | None | Expected JWT `iss` claim value. |
+| `WASI_AUTH_CONFIG` | No | `wasi-auth.toml` | File path to load the TOML configuration block. |
+| `WASI_AUTH_PUBLIC_PATHS` | No | *(see default)* | Comma-separated list of paths/patterns bypassing authentication. |
+| `WASI_AUTH_LOGIN_REDIRECT` | No | `/login` | URL to redirect unauthenticated GET requests to. |
+
+> **\* Silent Unsafe JWT Verification Fallback Condition:** If **any** of the cryptographic verification environment variables (`JWT_PUBLIC_KEY`, `JWT_AUDIENCE`, or `JWT_ISSUER`) are missing or blank, the interceptor silently falls back to **unsafe JWT parsing**. In this mode, the JWT claims payload is decoded without signature validation, but token expiration (`exp`) is still checked (with a 60-second grace window). This is strictly for development and testing.
+
+#### TOML Configuration
+
+By default, the interceptor searches for `wasi-auth.toml` (overridden by `WASI_AUTH_CONFIG`). 
+
+- **`[auth]` Section (Supported)**:
+  - `public_paths` (array of strings): Paths matching these patterns bypass verification.
+  - `login_redirect` (string): Redirect location for unauthenticated requests.
+- **`[jwt]` Section (Ignored)**:
+  - Properties under `[jwt]` (e.g. `public_key_path`, `audience`, `issuer`) are parsed into the config struct but **ignored** during runtime verification. Cryptographic JWT verification requires the `JWT_PUBLIC_KEY`, `JWT_AUDIENCE`, and `JWT_ISSUER` environment variables to be set.
+
+#### Default Public Paths
+
+If no custom public paths are provided, the interceptor defaults to:
+- `/`
+- `/login`
+- `/signup`
+- `/pkg/*` (static WASM/JS web bundles)
+- `/static/*` (assets, CSS, images)
+- `/health` (health check endpoints)
 
 ### Leptos Integration (`leptos-wasi-auth`)
 

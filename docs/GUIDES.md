@@ -456,3 +456,150 @@ pub async fn consume_magic_link_token(token: String) -> Result<bool, ServerFnErr
     Ok(true)
 }
 ```
+
+---
+
+## Technical Reference: Components, Traits, and APIs
+
+This section contains reference documentation for the additional modules, components, and configuration interfaces.
+
+### 1. `leptos-wasi-ui` Interactive Components
+
+The `leptos-wasi-ui` crate provides configurable, styled frontend components for authenticating and managing user credentials.
+
+- **`LoginForm`**: Tabbed interface for OTP, Magic Link, and TOTP.
+  - *Props*:
+    - `show_otp` (optional `bool`, defaults to `true`): Enables the OTP sign-in tab.
+    - `show_magic_link` (optional `bool`, defaults to `true`): Enables the Magic Link request tab.
+    - `show_totp` (optional `bool`, defaults to `true`): Enables the TOTP verification tab.
+    - `show_passkey` (optional `bool`, defaults to `true`): Renders WebAuthn Passkey buttons.
+    - `on_passkey_login` (optional callback): Triggered when passkey authentication starts.
+    - `passkey_login_pending` (`Signal<bool>`): Triggers loading indicators on the login button.
+- **`OtpForm`**: Renders a layout for requesting or entering a 6-digit one-time password code.
+  - *Props*:
+    - `email` (optional `String` signal): Prefills the user email input.
+    - `on_submit` (callback returning the entered code): Invoked on submit.
+- **`MagicLinkForm`**: Captures the user's email to initiate a magic link request.
+  - *Props*:
+    - `on_submit` (callback with email): Invoked when requesting a link.
+- **`TotpSetup`**: A setup wizard to register time-based MFA authenticator apps.
+  - *Props*:
+    - `issuer` (`&str`): The name of the service shown in Google Authenticator or Authy.
+    - `email` (`&str`): The user email account.
+    - `qr_data_uri` (`Option<String>`): Data URI string representing the QR code image.
+    - `secret_key` (`&str`): Plaintext base32 encoded secret key.
+    - `on_verify` (callback with code): Dispatched when the user enters the verification code.
+- **`MfaStatus`**: Displays the active MFA configuration state.
+  - *Props*:
+    - `enabled` (`bool` signal): Controls displaying of disabled/enabled badge status.
+    - `on_disable` (callback): Executed when the user clicks the "Disable MFA" button.
+- **`SessionList`**: Lists active user sessions and allows individual revocation.
+  - *Props*:
+    - `sessions` (`Vec<Session>` signal): Vector of active sessions.
+    - `on_revoke` (callback with `session_id`): Triggered to revoke a selected session.
+- **`PasskeyRegisterButton`** / **`PasskeyLoginButton`**: Wrapper buttons trigger standard WebAuthn browser calls.
+  - *Props*:
+    - `pending` (`Signal<bool>`): Disables input while credentials wait for signing.
+    - `on_click` (callback): Fired to request challenges.
+- **`PasskeyList`** (requires `passkey` feature): Panel showing registered passkeys.
+  - *Props*:
+    - `passkeys` (`Signal<Vec<StoredPasskey>>`): Vector of stored user credentials.
+    - `pending` (`Signal<bool>`): Renders loaders during operations.
+    - `on_rename` (callback with ID/Name): Renames a passkey nickname.
+    - `on_delete` (callback with ID): Deletes a stored credential.
+
+---
+
+### 2. `wasi-auth-providers` Client Presets
+
+The `wasi-auth-providers` crate exposes OAuth2 `OAuthConfig` templates to connect with external OIDC providers.
+
+- **Google**: `google::google(client_id, client_secret, redirect_uri)`
+  - *Endpoints*: Authorization: `https://accounts.google.com/o/oauth2/v2/auth`, Token: `https://oauth2.googleapis.com/token`, Userinfo: `https://openidconnect.googleapis.com/v1/userinfo`.
+- **GitHub**: `github::github(client_id, client_secret, redirect_uri)`
+  - *Endpoints*: Authorization: `https://github.com/login/oauth/authorize`, Token: `https://github.com/login/oauth/access_token`, Userinfo: `https://api.github.com/user`.
+- **Apple**: `apple::apple(client_id, client_secret, redirect_uri)`
+  - *Endpoints*: Authorization: `https://appleid.apple.com/auth/authorize`, Token: `https://appleid.apple.com/auth/token` (userinfo is not supported by standard Apple OIDC endpoint).
+- **Microsoft**: `microsoft::microsoft(client_id, client_secret, redirect_uri, tenant_id)`
+  - Uses `tenant_id` (defaults to `"common"` if `None`).
+  - *Endpoints*: Authorization: `/oauth2/v2.0/authorize`, Token: `/oauth2/v2.0/token`, Userinfo: `https://graph.microsoft.com/oidc/userinfo`.
+- **Facebook**: `facebook::facebook(client_id, client_secret, redirect_uri)`
+  - *Endpoints*: Authorization: `/dialog/oauth`, Token: `/oauth2/access_token`, Userinfo: `/me?fields=id,name,email`.
+- **Discord**: `discord::discord(client_id, client_secret, redirect_uri)`
+  - *Endpoints*: Authorization: `/api/oauth2/authorize`, Token: `/api/oauth2/token`, Userinfo: `/api/users/@me`.
+- **X (Twitter)**: `x::x(client_id, client_secret, redirect_uri)`
+  - *Endpoints*: Authorization: `/i/oauth2/authorize`, Token: `/2/oauth2/token`, Userinfo: `/2/users/me`.
+- **Keycloak**: `keycloak::keycloak(client_id, client_secret, redirect_uri, server_url, realm)`
+  - Constructs endpoints dynamically based on Keycloak realm path prefix `/realms/{realm}/protocol/openid-connect`.
+
+#### Cargo Feature Flags
+To minimize dependencies, presets are gated under respective cargo features: `google`, `github`, `apple`, `microsoft`, `facebook`, `discord`, `x`, `keycloak`, or all via the `all` feature flag.
+
+---
+
+### 3. RateLimiter Trait & InMemoryRateLimiter
+
+The framework supports request rate limiting to protect auth endpoints.
+
+#### `RateLimiter` Trait
+```rust
+pub trait RateLimiter {
+    fn check_rate_limit(&self, key: &str, action: &str) -> Result<bool, AuthError>;
+    fn record_action(&self, key: &str, action: &str) -> Result<(), AuthError>;
+}
+```
+
+#### `InMemoryRateLimiter` API
+A thread-safe, in-memory rate limiter using sliding windows and timestamp vectors:
+- `InMemoryRateLimiter::new(window_secs, default_limit)`: Creates a custom window.
+- `limiter.with_limit(action, limit)`: Sets custom limits (e.g. `"send_otp"` limit to `5` requests).
+- **Default configuration (`InMemoryRateLimiter::default()`)**:
+  - Sliding window: 900 seconds (15 minutes).
+  - Default action limit: 100 requests.
+  - Action `"send_otp"` limit: 5 requests.
+  - Action `"verify_otp"` limit: 10 requests.
+
+---
+
+### 4. Passkey (WebAuthn) APIs
+
+The `wasi-auth-core` module exposes helper wrappers for WebAuthn authentication using `passkey-server`.
+
+#### Registration Flow
+1. **Start**: Call `start_passkey_registration(&store, user_id, username, display_name, &config, now_ms)` to generate `PublicKeyCredentialCreationOptions`.
+2. **Client**: Send challenge options to the client and invoke `navigator.credentials.create()`.
+3. **Finish**: Call `finish_passkey_registration(&store, user_id, &config, registration_response, now_ms)` to verify the returned credential and save it inside the active `PasskeyStore`.
+
+#### Login/Assertion Flow
+1. **Start**: Call `start_passkey_login(&store, &config, now_ms)` to generate `PublicKeyCredentialRequestOptions`.
+2. **Client**: Send request options to the client and invoke `navigator.credentials.get()`.
+3. **Finish**: Call `finish_passkey_login(&store, &config, login_response, now_ms)` to verify the signature counter and return the authenticated user ID.
+
+---
+
+### 5. Standalone Interceptor Configuration Details
+
+The `wasi-auth-interceptor` handles routing validation transparently.
+
+#### Environment Variables
+- `WASI_AUTH_CONFIG`: Sets the filepath of the config file (defaults to `wasi-auth.toml`).
+- `WASI_AUTH_PUBLIC_PATHS`: Comma-separated list overriding bypass routes.
+- `WASI_AUTH_LOGIN_REDIRECT`: Sets the redirect target.
+- `JWT_PUBLIC_KEY`, `JWT_AUDIENCE`, `JWT_ISSUER`: Configures cryptographic verification.
+
+#### Unsafe JWT Fallback
+If any of `JWT_PUBLIC_KEY`, `JWT_AUDIENCE`, or `JWT_ISSUER` is missing, the interceptor falls back to **unsafe JWT parsing**. Claims are extracted without signature validation, but expiration (`exp`) is still checked (with a 60-second grace window).
+
+#### TOML Properties Mapping
+- **`[auth]` Section**: Fully supported (reads `public_paths` and `login_redirect`).
+- **`[jwt]` Section**: **Ignored** during runtime. Cryptographic signature validation requires environment variables `JWT_PUBLIC_KEY`, `JWT_AUDIENCE`, and `JWT_ISSUER`.
+
+#### Default Public Paths
+If not overridden, the following paths bypass authentication:
+- `/`
+- `/login`
+- `/signup`
+- `/pkg/*`
+- `/static/*`
+- `/health`
+```
