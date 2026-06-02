@@ -9,14 +9,27 @@ const DEFAULT_INPUT_STYLE: &str = "background: rgba(255, 255, 255, 0.05); border
 const DEFAULT_BUTTON_CLASS: &str = "wasi-auth-button";
 const DEFAULT_BUTTON_STYLE: &str = "background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 10px 16px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px;";
 
+#[derive(Clone, Debug)]
+pub struct OtpVerification {
+    pub email: String,
+    pub code: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct TotpVerification {
+    pub email: String,
+    pub code: String,
+}
+
 #[component]
 pub fn LoginForm(
-    #[prop(optional, into)] class: Option<String>,
-    #[prop(optional, into)] style: Option<String>,
-    #[prop(optional)] on_submit_otp: Option<Callback<(String, String)>>,
+    #[prop(optional, into)] class: Option<TextProp>,
+    #[prop(optional, into)] style: Option<TextProp>,
+    #[prop(optional, into)] initial_email: Option<String>,
+    #[prop(optional)] on_submit_otp: Option<Callback<OtpVerification>>,
     #[prop(optional)] on_request_otp: Option<Callback<String>>,
     #[prop(optional)] on_request_magic_link: Option<Callback<String>>,
-    #[prop(optional)] on_verify_totp: Option<Callback<(String, String)>>,
+    #[prop(optional)] on_verify_totp: Option<Callback<TotpVerification>>,
     #[prop(into)] request_otp_pending: Signal<bool>,
     #[prop(into)] request_otp_result: Signal<Option<Result<String, String>>>,
     #[prop(into)] verify_otp_pending: Signal<bool>,
@@ -29,22 +42,189 @@ pub fn LoginForm(
     #[prop(optional)] on_passkey_login: Option<Callback<()>>,
     #[prop(into)] passkey_login_pending: Signal<bool>,
     #[prop(optional)] show_oauth: Option<bool>,
+    #[prop(optional, default = true)] use_default_styles: bool,
 ) -> impl IntoView {
-    let merged_class = format!("{} {}", DEFAULT_CONTAINER_CLASS, class.unwrap_or_default());
-    let merged_style = format!("{}; {}", DEFAULT_CONTAINER_STYLE, style.unwrap_or_default());
-
     let (active_tab, set_active_tab) = leptos::prelude::signal(1); // 1 = OTP, 2 = Magic Link, 3 = TOTP
-
-    let (email, set_email) = leptos::prelude::signal(String::new());
+    let (email, set_email) = leptos::prelude::signal(initial_email.unwrap_or_default());
     let (otp_code, set_otp_code) = leptos::prelude::signal(String::new());
     let (totp_code, set_totp_code) = leptos::prelude::signal(String::new());
     let (otp_step, set_otp_step) = leptos::prelude::signal(1); // 1 = Request, 2 = Verify
 
+    let merged_class = move || {
+        let user_class = class
+            .as_ref()
+            .map(|c| format!(" {}", c.get()))
+            .unwrap_or_default();
+        format!("{}{}", DEFAULT_CONTAINER_CLASS, user_class)
+    };
+    let merged_style = move || {
+        if use_default_styles {
+            let user_style = style
+                .as_ref()
+                .map(|s| format!("; {}", s.get()))
+                .unwrap_or_default();
+            format!("{}{}", DEFAULT_CONTAINER_STYLE, user_style)
+        } else {
+            style
+                .as_ref()
+                .map(|s| s.get().to_string())
+                .unwrap_or_default()
+        }
+    };
+
+    let input_style = move || {
+        if use_default_styles {
+            DEFAULT_INPUT_STYLE
+        } else {
+            ""
+        }
+    };
+    let button_style = move || {
+        if use_default_styles {
+            DEFAULT_BUTTON_STYLE
+        } else {
+            ""
+        }
+    };
+    let label_style = move || {
+        if use_default_styles {
+            "font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);"
+        } else {
+            ""
+        }
+    };
+    let secondary_button_style = move || {
+        if use_default_styles {
+            "margin-top: 10px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 16px; color: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; font-size: 14px;"
+        } else {
+            ""
+        }
+    };
+    let h2_style = move || {
+        if use_default_styles {
+            "margin-top: 0; margin-bottom: 16px; font-size: 22px; font-weight: 600; text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let tab_bar_style = move || {
+        if use_default_styles {
+            "display: flex; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 20px;"
+        } else {
+            ""
+        }
+    };
+    let form_field_style = move || {
+        if use_default_styles {
+            "display: flex; flex-direction: column; align-items: flex-start; width: 100%;"
+        } else {
+            ""
+        }
+    };
+    let verify_text_style = move || {
+        if use_default_styles {
+            "margin-top: 0; margin-bottom: 16px; font-size: 13px; color: rgba(255, 255, 255, 0.6); text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let email_highlight_style = move || {
+        if use_default_styles {
+            "color: #fff; font-weight: 500;"
+        } else {
+            ""
+        }
+    };
+    let divider_style = move || {
+        if use_default_styles {
+            "display: flex; align-items: center; margin-top: 24px; margin-bottom: 16px;"
+        } else {
+            ""
+        }
+    };
+    let divider_line_style = move || {
+        if use_default_styles {
+            "flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1);"
+        } else {
+            ""
+        }
+    };
+    let divider_text_style = move || {
+        if use_default_styles {
+            "font-size: 12px; color: rgba(255, 255, 255, 0.4); padding: 0 8px;"
+        } else {
+            ""
+        }
+    };
+    let passkey_btn_style = move || {
+        if use_default_styles {
+            "background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 10px 16px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px;"
+        } else {
+            ""
+        }
+    };
+    let oauth_text_style = move || {
+        if use_default_styles {
+            "font-size: 11px; color: rgba(255, 255, 255, 0.4); padding: 0 8px; text-transform: uppercase; letter-spacing: 0.05em;"
+        } else {
+            ""
+        }
+    };
+    let oauth_btn_style = move || {
+        if use_default_styles {
+            "background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 10px 12px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px;"
+        } else {
+            ""
+        }
+    };
+    let oauth_container_style = move || {
+        if use_default_styles {
+            "display: flex; gap: 12px;"
+        } else {
+            ""
+        }
+    };
+    let error_box_style = move || {
+        if use_default_styles {
+            "margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let success_box_style = move || {
+        if use_default_styles {
+            "margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;"
+        } else {
+            ""
+        }
+    };
+
+    let tab_button_style = move |tab_id: i32| {
+        move || {
+            if use_default_styles {
+                let is_active = active_tab.get() == tab_id;
+                format!(
+                    "background: transparent; border: none; border-bottom: 2px solid {}; padding: 10px 12px; color: {}; font-weight: 500; font-size: 14px; cursor: pointer; flex: 1; transition: all 0.2s;",
+                    if is_active { "#fff" } else { "transparent" },
+                    if is_active {
+                        "#fff"
+                    } else {
+                        "rgba(255,255,255,0.5)"
+                    }
+                )
+            } else {
+                "".to_string()
+            }
+        }
+    };
+
     // Automatically transition to OTP code verification once requested successfully
     Effect::new(move |_| {
-        if let Some(Ok(_)) = request_otp_result.get() {
-            set_otp_step.set(2);
-        }
+        request_otp_result.with(|res| {
+            if let Some(Ok(_)) = res {
+                set_otp_step.set(2);
+            }
+        });
     });
 
     let handle_request_otp = move |ev: leptos::ev::SubmitEvent| {
@@ -53,10 +233,11 @@ pub fn LoginForm(
             return;
         }
         if let Some(ref cb) = on_request_otp {
-            let email_val = email.get();
-            if !email_val.trim().is_empty() {
-                cb.run(email_val);
-            }
+            email.with(|email_val| {
+                if !email_val.trim().is_empty() {
+                    cb.run(email_val.clone());
+                }
+            });
         }
     };
 
@@ -66,10 +247,13 @@ pub fn LoginForm(
             return;
         }
         if let Some(ref cb) = on_submit_otp {
-            let email_val = email.get();
-            let code_val = otp_code.get();
-            if !email_val.trim().is_empty() && !code_val.trim().is_empty() {
-                cb.run((email_val, code_val));
+            let is_valid =
+                email.with(|e| !e.trim().is_empty()) && otp_code.with(|c| !c.trim().is_empty());
+            if is_valid {
+                cb.run(OtpVerification {
+                    email: email.get(),
+                    code: otp_code.get(),
+                });
             }
         }
     };
@@ -80,10 +264,11 @@ pub fn LoginForm(
             return;
         }
         if let Some(ref cb) = on_request_magic_link {
-            let email_val = email.get();
-            if !email_val.trim().is_empty() {
-                cb.run(email_val);
-            }
+            email.with(|email_val| {
+                if !email_val.trim().is_empty() {
+                    cb.run(email_val.clone());
+                }
+            });
         }
     };
 
@@ -93,10 +278,13 @@ pub fn LoginForm(
             return;
         }
         if let Some(ref cb) = on_verify_totp {
-            let email_val = email.get();
-            let code_val = totp_code.get();
-            if !email_val.trim().is_empty() && !code_val.trim().is_empty() {
-                cb.run((email_val, code_val));
+            let is_valid =
+                email.with(|e| !e.trim().is_empty()) && totp_code.with(|c| !c.trim().is_empty());
+            if is_valid {
+                cb.run(TotpVerification {
+                    email: email.get(),
+                    code: totp_code.get(),
+                });
             }
         }
     };
@@ -110,55 +298,61 @@ pub fn LoginForm(
 
     view! {
         <div class=merged_class style=merged_style>
-            <style>
-                {r#"
-                .wasi-auth-input:focus {
-                    border-color: rgba(255, 255, 255, 0.3) !important;
-                    background: rgba(255, 255, 255, 0.08) !important;
-                    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
-                }
-                .wasi-auth-button:hover {
-                    background: rgba(255, 255, 255, 0.15) !important;
-                    border-color: rgba(255, 255, 255, 0.25) !important;
-                }
-                .wasi-auth-button:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                .wasi-auth-oauth-button:hover {
-                    background: rgba(255, 255, 255, 0.1) !important;
-                    border-color: rgba(255, 255, 255, 0.2) !important;
-                }
-                .wasi-auth-secondary-button:hover {
-                    background: rgba(255, 255, 255, 0.08) !important;
-                    border-color: rgba(255, 255, 255, 0.2) !important;
-                }
-                "#}
-            </style>
+            {if use_default_styles {
+                Some(view! {
+                    <style>
+                        {r#"
+                        .wasi-auth-input:focus {
+                            border-color: rgba(255, 255, 255, 0.3) !important;
+                            background: rgba(255, 255, 255, 0.08) !important;
+                            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+                        }
+                        .wasi-auth-button:hover {
+                            background: rgba(255, 255, 255, 0.15) !important;
+                            border-color: rgba(255, 255, 255, 0.25) !important;
+                        }
+                        .wasi-auth-button:disabled {
+                            opacity: 0.5;
+                            cursor: not-allowed;
+                        }
+                        .wasi-auth-oauth-button:hover {
+                            background: rgba(255, 255, 255, 0.1) !important;
+                            border-color: rgba(255, 255, 255, 0.2) !important;
+                        }
+                        .wasi-auth-secondary-button:hover {
+                            background: rgba(255, 255, 255, 0.08) !important;
+                            border-color: rgba(255, 255, 255, 0.2) !important;
+                        }
+                        "#}
+                    </style>
+                })
+            } else {
+                None
+            }}
 
-            <h2 style="margin-top: 0; margin-bottom: 16px; font-size: 22px; font-weight: 600; text-align: center;">
+            <h2 style=h2_style>
                 "Sign In"
             </h2>
 
             // Tab bar
-            <div style="display: flex; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 20px;">
+            <div style=tab_bar_style>
                 <button
                     type="button"
-                    style=move || format!("background: transparent; border: none; border-bottom: 2px solid {}; padding: 10px 12px; color: {}; font-weight: 500; font-size: 14px; cursor: pointer; flex: 1; transition: all 0.2s;", if active_tab.get() == 1 { "#fff" } else { "transparent" }, if active_tab.get() == 1 { "#fff" } else { "rgba(255,255,255,0.5)" })
+                    style=tab_button_style(1)
                     on:click=move |_| set_active_tab.set(1)
                 >
                     "Email OTP"
                 </button>
                 <button
                     type="button"
-                    style=move || format!("background: transparent; border: none; border-bottom: 2px solid {}; padding: 10px 12px; color: {}; font-weight: 500; font-size: 14px; cursor: pointer; flex: 1; transition: all 0.2s;", if active_tab.get() == 2 { "#fff" } else { "transparent" }, if active_tab.get() == 2 { "#fff" } else { "rgba(255,255,255,0.5)" })
+                    style=tab_button_style(2)
                     on:click=move |_| set_active_tab.set(2)
                 >
                     "Magic Link"
                 </button>
                 <button
                     type="button"
-                    style=move || format!("background: transparent; border: none; border-bottom: 2px solid {}; padding: 10px 12px; color: {}; font-weight: 500; font-size: 14px; cursor: pointer; flex: 1; transition: all 0.2s;", if active_tab.get() == 3 { "#fff" } else { "transparent" }, if active_tab.get() == 3 { "#fff" } else { "rgba(255,255,255,0.5)" })
+                    style=tab_button_style(3)
                     on:click=move |_| set_active_tab.set(3)
                 >
                     "MFA TOTP"
@@ -172,15 +366,15 @@ pub fn LoginForm(
                         view! {
                             <div>
                                 <form on:submit=handle_request_otp>
-                                    <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                        <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                                    <div style=form_field_style>
+                                        <label style=label_style>
                                             "Email Address"
                                         </label>
                                         <input
                                             type="email"
                                             placeholder="email@example.com"
                                             class=DEFAULT_INPUT_CLASS
-                                            style=DEFAULT_INPUT_STYLE
+                                            style=input_style
                                             required
                                             prop:value=email
                                             on:input=move |ev| set_email.set(event_target_value(&ev))
@@ -191,7 +385,7 @@ pub fn LoginForm(
                                     <button
                                         type="submit"
                                         class=DEFAULT_BUTTON_CLASS
-                                        style=DEFAULT_BUTTON_STYLE
+                                        style=button_style
                                         disabled=move || request_otp_pending.get()
                                     >
                                         {move || if request_otp_pending.get() { "Sending code..." } else { "Send OTP Code" }}
@@ -199,16 +393,18 @@ pub fn LoginForm(
                                 </form>
 
                                 {move || {
-                                    request_otp_result.get().and_then(|res| {
-                                        if let Err(err) = res {
-                                            Some(view! {
-                                                <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                    {err}
-                                                </div>
-                                            }.into_any())
-                                        } else {
-                                            None
-                                        }
+                                    request_otp_result.with(|res| {
+                                        res.as_ref().and_then(|r| {
+                                            if let Err(err) = r {
+                                                Some(view! {
+                                                    <div style=error_box_style>
+                                                        {err.clone()}
+                                                    </div>
+                                                }.into_any())
+                                            } else {
+                                                None
+                                            }
+                                        })
                                     })
                                 }}
                             </div>
@@ -216,19 +412,19 @@ pub fn LoginForm(
                     } else {
                         view! {
                             <div>
-                                <p style="margin-top: 0; margin-bottom: 16px; font-size: 13px; color: rgba(255, 255, 255, 0.6); text-align: center;">
-                                    "Enter the verification code sent to "<span style="color: #fff; font-weight: 500;">{email.get()}</span>
+                                <p style=verify_text_style>
+                                    "Enter the verification code sent to "<span style=email_highlight_style>{email}</span>
                                 </p>
                                 <form on:submit=handle_verify_otp>
-                                    <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                        <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                                    <div style=form_field_style>
+                                        <label style=label_style>
                                             "Verification Code"
                                         </label>
                                         <input
                                             type="text"
                                             placeholder="123456"
                                             class=DEFAULT_INPUT_CLASS
-                                            style=DEFAULT_INPUT_STYLE
+                                            style=input_style
                                             required
                                             prop:value=otp_code
                                             on:input=move |ev| set_otp_code.set(event_target_value(&ev))
@@ -239,7 +435,7 @@ pub fn LoginForm(
                                     <button
                                         type="submit"
                                         class=DEFAULT_BUTTON_CLASS
-                                        style=DEFAULT_BUTTON_STYLE
+                                        style=button_style
                                         disabled=move || verify_otp_pending.get()
                                     >
                                         {move || if verify_otp_pending.get() { "Verifying..." } else { "Verify Code" }}
@@ -248,7 +444,7 @@ pub fn LoginForm(
                                     <button
                                         type="button"
                                         class="wasi-auth-secondary-button"
-                                        style="margin-top: 10px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 16px; color: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; font-size: 14px;"
+                                        style=secondary_button_style
                                         on:click=handle_back_otp
                                         disabled=move || verify_otp_pending.get()
                                     >
@@ -257,29 +453,31 @@ pub fn LoginForm(
                                 </form>
 
                                 {move || {
-                                    verify_otp_result.get().map(|res| {
-                                        match res {
-                                            Ok(success) => {
-                                                if success {
-                                                    view! {
-                                                        <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;">
-                                                            "Verification successful!"
-                                                        </div>
-                                                    }.into_any()
-                                                } else {
-                                                    view! {
-                                                        <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                            "Invalid OTP code. Please try again."
-                                                        </div>
-                                                    }.into_any()
+                                    verify_otp_result.with(|res| {
+                                        res.as_ref().map(|r| {
+                                            match r {
+                                                Ok(success) => {
+                                                    if *success {
+                                                        view! {
+                                                            <div style=success_box_style>
+                                                                "Verification successful!"
+                                                            </div>
+                                                        }.into_any()
+                                                    } else {
+                                                        view! {
+                                                            <div style=error_box_style>
+                                                                "Invalid OTP code. Please try again."
+                                                            </div>
+                                                        }.into_any()
+                                                    }
                                                 }
+                                                Err(err) => view! {
+                                                    <div style=error_box_style>
+                                                        {err.clone()}
+                                                    </div>
+                                                }.into_any()
                                             }
-                                            Err(err) => view! {
-                                                <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                    {err}
-                                                </div>
-                                            }.into_any()
-                                        }
+                                        })
                                     })
                                 }}
                             </div>
@@ -290,15 +488,15 @@ pub fn LoginForm(
                     view! {
                         <div>
                             <form on:submit=handle_request_magic_link>
-                                <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                    <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                                <div style=form_field_style>
+                                    <label style=label_style>
                                         "Email Address"
                                     </label>
                                     <input
                                         type="email"
                                         placeholder="email@example.com"
                                         class=DEFAULT_INPUT_CLASS
-                                        style=DEFAULT_INPUT_STYLE
+                                        style=input_style
                                         required
                                         prop:value=email
                                         on:input=move |ev| set_email.set(event_target_value(&ev))
@@ -309,7 +507,7 @@ pub fn LoginForm(
                                 <button
                                     type="submit"
                                     class=DEFAULT_BUTTON_CLASS
-                                    style=DEFAULT_BUTTON_STYLE
+                                    style=button_style
                                     disabled=move || request_magic_link_pending.get()
                                 >
                                     {move || if request_magic_link_pending.get() { "Sending link..." } else { "Send Magic Link" }}
@@ -317,19 +515,21 @@ pub fn LoginForm(
                             </form>
 
                             {move || {
-                                request_magic_link_result.get().map(|res| {
-                                    match res {
-                                        Ok(msg) => view! {
-                                            <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;">
-                                                {msg}
-                                            </div>
-                                        }.into_any(),
-                                        Err(err) => view! {
-                                            <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                {err}
-                                            </div>
-                                        }.into_any()
-                                    }
+                                request_magic_link_result.with(|res| {
+                                    res.as_ref().map(|r| {
+                                        match r {
+                                            Ok(msg) => view! {
+                                                <div style=success_box_style>
+                                                    {msg.clone()}
+                                                </div>
+                                            }.into_any(),
+                                            Err(err) => view! {
+                                                <div style=error_box_style>
+                                                    {err.clone()}
+                                                </div>
+                                            }.into_any()
+                                        }
+                                    })
                                 })
                             }}
                         </div>
@@ -339,30 +539,30 @@ pub fn LoginForm(
                     view! {
                         <div>
                             <form on:submit=handle_verify_totp>
-                                <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                    <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                                <div style=form_field_style>
+                                    <label style=label_style>
                                         "Email Address"
                                     </label>
                                     <input
                                         type="email"
                                         placeholder="email@example.com"
                                         class=DEFAULT_INPUT_CLASS
-                                        style=DEFAULT_INPUT_STYLE
+                                        style=input_style
                                         required
                                         prop:value=email
                                         on:input=move |ev| set_email.set(event_target_value(&ev))
                                         disabled=move || verify_totp_pending.get()
                                     />
                                 </div>
-                                <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                    <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                                <div style=form_field_style>
+                                    <label style=label_style>
                                         "MFA Authenticator Code"
                                     </label>
                                     <input
                                         type="text"
                                         placeholder="123456"
                                         class=DEFAULT_INPUT_CLASS
-                                        style=DEFAULT_INPUT_STYLE
+                                        style=input_style
                                         required
                                         prop:value=totp_code
                                         on:input=move |ev| set_totp_code.set(event_target_value(&ev))
@@ -373,7 +573,7 @@ pub fn LoginForm(
                                 <button
                                     type="submit"
                                     class=DEFAULT_BUTTON_CLASS
-                                    style=DEFAULT_BUTTON_STYLE
+                                    style=button_style
                                     disabled=move || verify_totp_pending.get()
                                 >
                                     {move || if verify_totp_pending.get() { "Verifying..." } else { "Verify & Sign In" }}
@@ -381,29 +581,31 @@ pub fn LoginForm(
                             </form>
 
                             {move || {
-                                verify_totp_result.get().map(|res| {
-                                    match res {
-                                        Ok(success) => {
-                                            if success {
-                                                view! {
-                                                    <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;">
-                                                        "TOTP login successful!"
-                                                    </div>
-                                                }.into_any()
-                                            } else {
-                                                view! {
-                                                    <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                        "Invalid TOTP code. Please try again."
-                                                    </div>
-                                                }.into_any()
+                                verify_totp_result.with(|res| {
+                                    res.as_ref().map(|r| {
+                                        match r {
+                                            Ok(success) => {
+                                                if *success {
+                                                    view! {
+                                                        <div style=success_box_style>
+                                                            "TOTP login successful!"
+                                                        </div>
+                                                    }.into_any()
+                                                } else {
+                                                    view! {
+                                                        <div style=error_box_style>
+                                                            "Invalid TOTP code. Please try again."
+                                                        </div>
+                                                    }.into_any()
+                                                }
                                             }
+                                            Err(err) => view! {
+                                                <div style=error_box_style>
+                                                    {err.clone()}
+                                                </div>
+                                            }.into_any()
                                         }
-                                        Err(err) => view! {
-                                            <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                {err}
-                                            </div>
-                                        }.into_any()
-                                    }
+                                    })
                                 })
                             }}
                         </div>
@@ -416,16 +618,16 @@ pub fn LoginForm(
             {move || if display_passkey {
                 view! {
                     <div>
-                        <div style="display: flex; align-items: center; margin-top: 24px; margin-bottom: 16px;">
-                            <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1);"></div>
-                            <span style="font-size: 12px; color: rgba(255, 255, 255, 0.4); padding: 0 8px;">"OR"</span>
-                            <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1);"></div>
+                        <div style=divider_style>
+                            <div style=divider_line_style></div>
+                            <span style=divider_text_style>"OR"</span>
+                            <div style=divider_line_style></div>
                         </div>
 
                         <button
                             type="button"
                             class="wasi-auth-passkey-login-button"
-                            style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 10px 16px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px;"
+                            style=passkey_btn_style
                             disabled=move || passkey_login_pending.get()
                             on:click=move |_| {
                                 if let Some(ref cb) = on_passkey_login {
@@ -435,7 +637,7 @@ pub fn LoginForm(
                         >
                             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width: 18px; height: 18px; flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 009 11a5 5 0 00-10 0c0 1.05.15 2.07.433 3.036l.64 2.222A3.01 3.01 0 003 18.11V21h3v-2.89a3 3 0 01.378-1.468z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-3.517 1.009-6.799 2.753-9.571m3.44 2.04l-.054.09A13.916 13.916 0 0015 11a5 5 0 0010 0c0-1.05-.15-2.07-.433-3.036l-.64-2.222A3.01 3.01 0 0021 5.89V3h-3v2.89a3 3 0 01-.378 1.468z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-3.517 1.009-6.799 2.753-9.571m-3.44 2.04l-.054.09A13.916 13.916 0 0015 11a5 5 0 0010 0c0-1.05-.15-2.07-.433-3.036l-.64-2.222A3.01 3.01 0 0021 5.89V3h-3v2.89a3 3 0 01-.378 1.468z" />
                             </svg>
                             {move || if passkey_login_pending.get() { "Starting Passkey..." } else { "Login with Passkey" }}
                         </button>
@@ -448,17 +650,17 @@ pub fn LoginForm(
             // OAuth2 option title and buttons
             {move || if show_oauth.unwrap_or(true) {
                 view! {
-                    <div style="display: flex; align-items: center; margin-top: 24px; margin-bottom: 16px;">
-                        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1);"></div>
-                        <span style="font-size: 11px; color: rgba(255, 255, 255, 0.4); padding: 0 8px; text-transform: uppercase; letter-spacing: 0.05em;">"Sign in with"</span>
-                        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1);"></div>
+                    <div style=divider_style>
+                        <div style=divider_line_style></div>
+                        <span style=oauth_text_style>"Sign in with"</span>
+                        <div style=divider_line_style></div>
                     </div>
 
-                    <div style="display: flex; gap: 12px;">
+                    <div style=oauth_container_style>
                         <button
                             type="button"
                             class="wasi-auth-oauth-button"
-                            style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 10px 12px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px;"
+                            style=oauth_btn_style
                         >
                             <svg fill="currentColor" viewBox="0 0 24 24" style="width: 16px; height: 16px; flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
                                 <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.48 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.577.688.479C19.137 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
@@ -468,7 +670,7 @@ pub fn LoginForm(
                         <button
                             type="button"
                             class="wasi-auth-oauth-button"
-                            style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 10px 12px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px;"
+                            style=oauth_btn_style
                         >
                             <svg viewBox="0 0 24 24" fill="currentColor" style="width: 16px; height: 16px; flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />

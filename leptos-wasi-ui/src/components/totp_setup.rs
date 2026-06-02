@@ -9,49 +9,172 @@ const DEFAULT_INPUT_STYLE: &str = "background: rgba(255, 255, 255, 0.05); border
 const DEFAULT_BUTTON_CLASS: &str = "wasi-auth-button";
 const DEFAULT_BUTTON_STYLE: &str = "background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 10px 16px; color: #fff; cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px;";
 
+#[derive(Clone, Debug)]
+pub struct TotpSetupVerification {
+    pub email: String,
+    pub code: String,
+}
+
 #[component]
 pub fn TotpSetup(
-    #[prop(optional, into)] class: Option<String>,
-    #[prop(optional, into)] style: Option<String>,
+    #[prop(optional, into)] class: Option<TextProp>,
+    #[prop(optional, into)] style: Option<TextProp>,
+    #[prop(optional, into)] initial_email: Option<String>,
     #[prop(into)] uri: Signal<Option<String>>,
     #[prop(optional)] on_setup: Option<Callback<String>>,
-    #[prop(optional)] on_verify: Option<Callback<(String, String)>>,
+    #[prop(optional)] on_verify: Option<Callback<TotpSetupVerification>>,
     #[prop(into)] setup_pending: Signal<bool>,
     #[prop(into)] setup_result: Signal<Option<Result<String, String>>>,
     #[prop(into)] verify_pending: Signal<bool>,
     #[prop(into)] verify_result: Signal<Option<Result<bool, String>>>,
+    #[prop(optional, default = true)] use_default_styles: bool,
 ) -> impl IntoView {
-    let merged_class = format!("{} {}", DEFAULT_CONTAINER_CLASS, class.unwrap_or_default());
-    let merged_style = format!("{}; {}", DEFAULT_CONTAINER_STYLE, style.unwrap_or_default());
+    let merged_class = move || {
+        let user_class = class
+            .as_ref()
+            .map(|c| format!(" {}", c.get()))
+            .unwrap_or_default();
+        format!("{}{}", DEFAULT_CONTAINER_CLASS, user_class)
+    };
+    let merged_style = move || {
+        if use_default_styles {
+            let user_style = style
+                .as_ref()
+                .map(|s| format!("; {}", s.get()))
+                .unwrap_or_default();
+            format!("{}{}", DEFAULT_CONTAINER_STYLE, user_style)
+        } else {
+            style
+                .as_ref()
+                .map(|s| s.get().to_string())
+                .unwrap_or_default()
+        }
+    };
 
-    let (email, set_email) = leptos::prelude::signal(String::new());
+    let h2_style = move || {
+        if use_default_styles {
+            "margin-top: 0; margin-bottom: 8px; font-size: 20px; font-weight: 600; text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let p_style = move || {
+        if use_default_styles {
+            "margin-top: 0; margin-bottom: 20px; font-size: 14px; color: rgba(255, 255, 255, 0.6); text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let form_field_style = move || {
+        if use_default_styles {
+            "display: flex; flex-direction: column; align-items: flex-start; width: 100%;"
+        } else {
+            ""
+        }
+    };
+    let label_style = move || {
+        if use_default_styles {
+            "font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);"
+        } else {
+            ""
+        }
+    };
+    let input_style = move || {
+        if use_default_styles {
+            DEFAULT_INPUT_STYLE
+        } else {
+            ""
+        }
+    };
+    let button_style = move || {
+        if use_default_styles {
+            DEFAULT_BUTTON_STYLE
+        } else {
+            ""
+        }
+    };
+    let info_box_style = move || {
+        if use_default_styles {
+            "background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 16px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 12px; font-size: 13px;"
+        } else {
+            ""
+        }
+    };
+    let info_label_style = move || {
+        if use_default_styles {
+            "color: rgba(255, 255, 255, 0.5); font-weight: 500;"
+        } else {
+            ""
+        }
+    };
+    let secret_display_style = move || {
+        if use_default_styles {
+            "background: rgba(0, 0, 0, 0.2); border: 1px dashed rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 8px; margin-top: 4px; font-family: monospace; font-size: 14px; word-break: break-all; text-align: center; color: #fff; user-select: all;"
+        } else {
+            ""
+        }
+    };
+    let uri_display_style = move || {
+        if use_default_styles {
+            "background: rgba(0, 0, 0, 0.2); border: 1px dashed rgba(255, 255, 255, 0.1); border-radius: 4px; padding: 8px; margin-top: 4px; font-family: monospace; font-size: 11px; word-break: break-all; color: rgba(255, 255, 255, 0.8); user-select: all; max-height: 80px; overflow-y: auto;"
+        } else {
+            ""
+        }
+    };
+    let secondary_button_style = move || {
+        if use_default_styles {
+            "margin-top: 10px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 16px; color: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; font-size: 14px;"
+        } else {
+            ""
+        }
+    };
+    let error_box_style = move || {
+        if use_default_styles {
+            "margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let success_box_style = move || {
+        if use_default_styles {
+            "margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;"
+        } else {
+            ""
+        }
+    };
+
+    let (email, set_email) = leptos::prelude::signal(initial_email.unwrap_or_default());
     let (code, set_code) = leptos::prelude::signal(String::new());
     let (step, set_step) = leptos::prelude::signal(1); // 1 = Initialize, 2 = Verify
 
     // Automatically transition to setup display / verification once initiated
     Effect::new(move |_| {
-        if uri.get().is_some() || setup_result.get().is_some() {
+        let has_uri = uri.with(|u| u.is_some());
+        let has_setup = setup_result.with(|s| s.is_some());
+        if has_uri || has_setup {
             set_step.set(2);
         }
     });
 
     let secret_key = move || {
-        if let Some(Ok(ref sec)) = setup_result.get() {
-            Some(sec.clone())
-        } else if let Some(ref uri_str) = uri.get() {
-            if let Some(pos) = uri_str.find("secret=") {
-                let start = pos + 7;
-                let end = uri_str[start..]
-                    .find('&')
-                    .map(|p| start + p)
-                    .unwrap_or(uri_str.len());
-                Some(uri_str[start..end].to_string())
+        setup_result.with(|res| {
+            if let Some(Ok(sec)) = res.as_ref() {
+                Some(sec.clone())
             } else {
-                None
+                uri.with(|u| {
+                    u.as_ref().and_then(|uri_str| {
+                        uri_str.find("secret=").map(|pos| {
+                            let start = pos + 7;
+                            let end = uri_str[start..]
+                                .find('&')
+                                .map(|p| start + p)
+                                .unwrap_or(uri_str.len());
+                            uri_str[start..end].to_string()
+                        })
+                    })
+                })
             }
-        } else {
-            None
-        }
+        })
     };
 
     let handle_setup = move |ev: leptos::ev::SubmitEvent| {
@@ -60,10 +183,11 @@ pub fn TotpSetup(
             return;
         }
         if let Some(ref cb) = on_setup {
-            let email_val = email.get();
-            if !email_val.trim().is_empty() {
-                cb.run(email_val);
-            }
+            email.with(|email_val| {
+                if !email_val.trim().is_empty() {
+                    cb.run(email_val.clone());
+                }
+            });
         }
     };
 
@@ -73,10 +197,13 @@ pub fn TotpSetup(
             return;
         }
         if let Some(ref cb) = on_verify {
-            let email_val = email.get();
-            let code_val = code.get();
-            if !email_val.trim().is_empty() && !code_val.trim().is_empty() {
-                cb.run((email_val, code_val));
+            let is_valid =
+                email.with(|e| !e.trim().is_empty()) && code.with(|c| !c.trim().is_empty());
+            if is_valid {
+                cb.run(TotpSetupVerification {
+                    email: email.get(),
+                    code: code.get(),
+                });
             }
         }
     };
@@ -88,49 +215,55 @@ pub fn TotpSetup(
 
     view! {
         <div class=merged_class style=merged_style>
-            <style>
-                {r#"
-                .wasi-auth-input:focus {
-                    border-color: rgba(255, 255, 255, 0.3) !important;
-                    background: rgba(255, 255, 255, 0.08) !important;
-                    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
-                }
-                .wasi-auth-button:hover {
-                    background: rgba(255, 255, 255, 0.15) !important;
-                    border-color: rgba(255, 255, 255, 0.25) !important;
-                }
-                .wasi-auth-button:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                .wasi-auth-secondary-button:hover {
-                    background: rgba(255, 255, 255, 0.08) !important;
-                    border-color: rgba(255, 255, 255, 0.2) !important;
-                }
-                "#}
-            </style>
+            {if use_default_styles {
+                Some(view! {
+                    <style>
+                        {r#"
+                        .wasi-auth-input:focus {
+                            border-color: rgba(255, 255, 255, 0.3) !important;
+                            background: rgba(255, 255, 255, 0.08) !important;
+                            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+                        }
+                        .wasi-auth-button:hover {
+                            background: rgba(255, 255, 255, 0.15) !important;
+                            border-color: rgba(255, 255, 255, 0.25) !important;
+                        }
+                        .wasi-auth-button:disabled {
+                            opacity: 0.5;
+                            cursor: not-allowed;
+                        }
+                        .wasi-auth-secondary-button:hover {
+                            background: rgba(255, 255, 255, 0.08) !important;
+                            border-color: rgba(255, 255, 255, 0.2) !important;
+                        }
+                        "#}
+                    </style>
+                })
+            } else {
+                None
+            }}
 
-            <h2 style="margin-top: 0; margin-bottom: 8px; font-size: 20px; font-weight: 600; text-align: center;">
+            <h2 style=h2_style>
                 "MFA: TOTP Setup"
             </h2>
 
             {move || if step.get() == 1 {
                 view! {
                     <div>
-                        <p style="margin-top: 0; margin-bottom: 20px; font-size: 14px; color: rgba(255, 255, 255, 0.6); text-align: center;">
+                        <p style=p_style>
                             "Configure your authenticator app to enable Multi-Factor Authentication."
                         </p>
 
                         <form on:submit=handle_setup>
-                            <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                            <div style=form_field_style>
+                                <label style=label_style>
                                     "Email Address"
                                 </label>
                                 <input
                                     type="email"
                                     placeholder="email@example.com"
                                     class=DEFAULT_INPUT_CLASS
-                                    style=DEFAULT_INPUT_STYLE
+                                    style=input_style
                                     required
                                     prop:value=email
                                     on:input=move |ev| set_email.set(event_target_value(&ev))
@@ -141,7 +274,7 @@ pub fn TotpSetup(
                             <button
                                 type="submit"
                                 class=DEFAULT_BUTTON_CLASS
-                                style=DEFAULT_BUTTON_STYLE
+                                style=button_style
                                 disabled=move || setup_pending.get()
                             >
                                 {move || if setup_pending.get() { "Initializing..." } else { "Start TOTP Setup" }}
@@ -149,16 +282,18 @@ pub fn TotpSetup(
                         </form>
 
                         {move || {
-                            setup_result.get().and_then(|res| {
-                                if let Err(err) = res {
-                                    Some(view! {
-                                        <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                            {err}
-                                        </div>
-                                    }.into_any())
-                                } else {
-                                    None
-                                }
+                            setup_result.with(|res| {
+                                res.as_ref().and_then(|r| {
+                                    if let Err(err) = r {
+                                        Some(view! {
+                                            <div style=error_box_style>
+                                                {err.clone()}
+                                            </div>
+                                        }.into_any())
+                                    } else {
+                                        None
+                                    }
+                                })
                             })
                         }}
                     </div>
@@ -166,40 +301,40 @@ pub fn TotpSetup(
             } else {
                 view! {
                     <div>
-                        <p style="margin-top: 0; margin-bottom: 20px; font-size: 14px; color: rgba(255, 255, 255, 0.6); text-align: center;">
+                        <p style=p_style>
                             "Scan the QR code or manually input the secret key into your authenticator app (such as Google Authenticator or Authy)."
                         </p>
 
-                        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 16px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+                        <div style=info_box_style>
                             {move || secret_key().map(|sec| view! {
                                 <div>
-                                    <span style="color: rgba(255,255,255,0.5); font-weight:500;">"Secret Key (Base32):"</span>
-                                    <div style="background: rgba(0,0,0,0.2); border: 1px dashed rgba(255,255,255,0.1); border-radius:4px; padding:8px; margin-top:4px; font-family:monospace; font-size:14px; word-break:break-all; text-align:center; color:#fff; user-select:all;">
+                                    <span style=info_label_style>"Secret Key (Base32):"</span>
+                                    <div style=secret_display_style>
                                         {sec}
                                     </div>
                                 </div>
                             })}
 
-                            {move || uri.get().map(|u| view! {
+                            {move || uri.with(|u| u.as_ref().map(|uri_str| view! {
                                 <div>
-                                    <span style="color: rgba(255,255,255,0.5); font-weight:500;">"Provisioning URI:"</span>
-                                    <div style="background: rgba(0,0,0,0.2); border: 1px dashed rgba(255,255,255,0.1); border-radius:4px; padding:8px; margin-top:4px; font-family:monospace; font-size:11px; word-break:break-all; color:rgba(255,255,255,0.8); user-select:all; max-height: 80px; overflow-y: auto;">
-                                        {u}
+                                    <span style=info_label_style>"Provisioning URI:"</span>
+                                    <div style=uri_display_style>
+                                        {uri_str.clone()}
                                     </div>
                                 </div>
-                            })}
+                            }))}
                         </div>
 
                         <form on:submit=handle_verify>
-                            <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                            <div style=form_field_style>
+                                <label style=label_style>
                                     "Enter 6-digit Code"
                                 </label>
                                 <input
                                     type="text"
                                     placeholder="123456"
                                     class=DEFAULT_INPUT_CLASS
-                                    style=DEFAULT_INPUT_STYLE
+                                    style=input_style
                                     required
                                     prop:value=code
                                     on:input=move |ev| set_code.set(event_target_value(&ev))
@@ -210,7 +345,7 @@ pub fn TotpSetup(
                             <button
                                 type="submit"
                                 class=DEFAULT_BUTTON_CLASS
-                                style=DEFAULT_BUTTON_STYLE
+                                style=button_style
                                 disabled=move || verify_pending.get()
                             >
                                 {move || if verify_pending.get() { "Verifying..." } else { "Verify & Enable TOTP" }}
@@ -219,7 +354,7 @@ pub fn TotpSetup(
                             <button
                                 type="button"
                                 class="wasi-auth-secondary-button"
-                                style="margin-top: 10px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 16px; color: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; font-size: 14px;"
+                                style=secondary_button_style
                                 on:click=handle_back
                                 disabled=move || verify_pending.get()
                             >
@@ -228,29 +363,31 @@ pub fn TotpSetup(
                         </form>
 
                         {move || {
-                            verify_result.get().map(|res| {
-                                match res {
-                                    Ok(success) => {
-                                        if success {
-                                            view! {
-                                                <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;">
-                                                    "TOTP successfully enabled!"
-                                                </div>
-                                            }.into_any()
-                                        } else {
-                                            view! {
-                                                <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                    "Invalid code. Setup verification failed."
-                                                </div>
-                                            }.into_any()
+                            verify_result.with(|res| {
+                                res.as_ref().map(|r| {
+                                    match r {
+                                        Ok(success) => {
+                                            if *success {
+                                                view! {
+                                                    <div style=success_box_style>
+                                                        "TOTP successfully enabled!"
+                                                    </div>
+                                                }.into_any()
+                                            } else {
+                                                view! {
+                                                    <div style=error_box_style>
+                                                        "Invalid code. Setup verification failed."
+                                                    </div>
+                                                }.into_any()
+                                            }
                                         }
+                                        Err(err) => view! {
+                                            <div style=error_box_style>
+                                                {err.clone()}
+                                            </div>
+                                        }.into_any()
                                     }
-                                    Err(err) => view! {
-                                        <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                            {err}
-                                        </div>
-                                    }.into_any()
-                                }
+                                })
                             })
                         }}
                     </div>

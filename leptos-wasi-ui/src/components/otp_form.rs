@@ -11,25 +11,118 @@ const DEFAULT_BUTTON_STYLE: &str = "background: rgba(255, 255, 255, 0.1); border
 
 #[component]
 pub fn OtpForm(
-    #[prop(optional, into)] class: Option<String>,
-    #[prop(optional, into)] style: Option<String>,
-    #[prop(optional)] on_request: Option<Callback<String>>,
-    #[prop(optional)] on_verify: Option<Callback<(String, String)>>,
+    #[prop(optional, into)] class: Option<TextProp>,
+    #[prop(optional, into)] style: Option<TextProp>,
+    // Required callbacks to avoid silent failures
+    on_request: Callback<String>,
+    on_verify: Callback<(String, String)>,
     #[prop(into)] request_pending: Signal<bool>,
     #[prop(into)] request_result: Signal<Option<Result<String, String>>>,
     #[prop(into)] verify_pending: Signal<bool>,
     #[prop(into)] verify_result: Signal<Option<Result<bool, String>>>,
+    #[prop(optional, default = true)] use_default_styles: bool,
 ) -> impl IntoView {
-    let merged_class = format!("{} {}", DEFAULT_CONTAINER_CLASS, class.unwrap_or_default());
-    let merged_style = format!("{}; {}", DEFAULT_CONTAINER_STYLE, style.unwrap_or_default());
+    let merged_class = move || {
+        let user_class = class
+            .as_ref()
+            .map(|c| format!(" {}", c.get()))
+            .unwrap_or_default();
+        format!("{}{}", DEFAULT_CONTAINER_CLASS, user_class)
+    };
+
+    let merged_style = move || {
+        if use_default_styles {
+            let user_style = style
+                .as_ref()
+                .map(|s| format!("; {}", s.get()))
+                .unwrap_or_default();
+            format!("{}{}", DEFAULT_CONTAINER_STYLE, user_style)
+        } else {
+            style
+                .as_ref()
+                .map(|s| s.get().to_string())
+                .unwrap_or_default()
+        }
+    };
+
+    let h2_style = move || {
+        if use_default_styles {
+            "margin-top: 0; margin-bottom: 8px; font-size: 20px; font-weight: 600; text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let p_style = move || {
+        if use_default_styles {
+            "margin-top: 0; margin-bottom: 20px; font-size: 14px; color: rgba(255, 255, 255, 0.6); text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let form_field_style = move || {
+        if use_default_styles {
+            "display: flex; flex-direction: column; align-items: flex-start; width: 100%;"
+        } else {
+            ""
+        }
+    };
+    let label_style = move || {
+        if use_default_styles {
+            "font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);"
+        } else {
+            ""
+        }
+    };
+    let input_style = move || {
+        if use_default_styles {
+            DEFAULT_INPUT_STYLE
+        } else {
+            ""
+        }
+    };
+    let button_style = move || {
+        if use_default_styles {
+            DEFAULT_BUTTON_STYLE
+        } else {
+            ""
+        }
+    };
+    let secondary_button_style = move || {
+        if use_default_styles {
+            "margin-top: 10px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 16px; color: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; font-size: 14px;"
+        } else {
+            ""
+        }
+    };
+    let email_highlight_style = move || {
+        if use_default_styles {
+            "color: #fff; font-weight: 500;"
+        } else {
+            ""
+        }
+    };
+    let success_box_style = move || {
+        if use_default_styles {
+            "margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;"
+        } else {
+            ""
+        }
+    };
+    let error_box_style = move || {
+        if use_default_styles {
+            "margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;"
+        } else {
+            ""
+        }
+    };
 
     let (email, set_email) = leptos::prelude::signal(String::new());
     let (code, set_code) = leptos::prelude::signal(String::new());
     let (step, set_step) = leptos::prelude::signal(1); // 1 = Request, 2 = Verify
 
-    // Automatically transition to verification step if request succeeded
+    // Transition dynamically to verification step using borrowed .with check
     Effect::new(move |_| {
-        if let Some(Ok(_)) = request_result.get() {
+        if request_result.with(|res| matches!(res, Some(Ok(_)))) {
             set_step.set(2);
         }
     });
@@ -39,12 +132,12 @@ pub fn OtpForm(
         if request_pending.get() {
             return;
         }
-        if let Some(ref cb) = on_request {
-            let email_val = email.get();
-            if !email_val.trim().is_empty() {
-                cb.run(email_val);
+
+        email.with(|e| {
+            if !e.trim().is_empty() {
+                on_request.run(e.clone());
             }
-        }
+        });
     };
 
     let handle_verify = move |ev: leptos::ev::SubmitEvent| {
@@ -52,13 +145,14 @@ pub fn OtpForm(
         if verify_pending.get() {
             return;
         }
-        if let Some(ref cb) = on_verify {
-            let email_val = email.get();
-            let code_val = code.get();
-            if !email_val.trim().is_empty() && !code_val.trim().is_empty() {
-                cb.run((email_val, code_val));
-            }
-        }
+
+        email.with(|e| {
+            code.with(|c| {
+                if !e.trim().is_empty() && !c.trim().is_empty() {
+                    on_verify.run((e.clone(), c.clone()));
+                }
+            })
+        });
     };
 
     let handle_back = move |_| {
@@ -68,77 +162,85 @@ pub fn OtpForm(
 
     view! {
         <div class=merged_class style=merged_style>
-            <style>
-                {r#"
-                .wasi-auth-input:focus {
-                    border-color: rgba(255, 255, 255, 0.3) !important;
-                    background: rgba(255, 255, 255, 0.08) !important;
-                    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
-                }
-                .wasi-auth-button:hover {
-                    background: rgba(255, 255, 255, 0.15) !important;
-                    border-color: rgba(255, 255, 255, 0.25) !important;
-                }
-                .wasi-auth-button:disabled {
-                    opacity: 0.5;
-                    cursor: not-allowed;
-                }
-                .wasi-auth-secondary-button:hover {
-                    background: rgba(255, 255, 255, 0.08) !important;
-                    border-color: rgba(255, 255, 255, 0.2) !important;
-                }
-                "#}
-            </style>
+            {if use_default_styles {
+                Some(view! {
+                    <style>
+                        {r#"
+                        .wasi-auth-input:focus {
+                            border-color: rgba(255, 255, 255, 0.3) !important;
+                            background: rgba(255, 255, 255, 0.08) !important;
+                            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+                        }
+                        .wasi-auth-button:hover {
+                            background: rgba(255, 255, 255, 0.15) !important;
+                            border-color: rgba(255, 255, 255, 0.25) !important;
+                        }
+                        .wasi-auth-button:disabled {
+                            opacity: 0.5;
+                            cursor: not-allowed;
+                        }
+                        .wasi-auth-secondary-button:hover {
+                            background: rgba(255, 255, 255, 0.08) !important;
+                            border-color: rgba(255, 255, 255, 0.2) !important;
+                        }
+                        "#}
+                    </style>
+                })
+            } else {
+                None
+            }}
 
-            <h2 style="margin-top: 0; margin-bottom: 8px; font-size: 20px; font-weight: 600; text-align: center;">
+            <h2 style=h2_style>
                 "One-Time Password"
             </h2>
 
             {move || if step.get() == 1 {
                 view! {
                     <div>
-                        <p style="margin-top: 0; margin-bottom: 20px; font-size: 14px; color: rgba(255, 255, 255, 0.6); text-align: center;">
+                        <p style=p_style>
                             "Enter your email to request a login verification code."
                         </p>
 
                         <form on:submit=handle_request>
-                            <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                            <div style=form_field_style>
+                                <label style=label_style>
                                     "Email Address"
                                 </label>
                                 <input
                                     type="email"
                                     placeholder="email@example.com"
                                     class=DEFAULT_INPUT_CLASS
-                                    style=DEFAULT_INPUT_STYLE
+                                    style=input_style
                                     required
                                     prop:value=email
                                     on:input=move |ev| set_email.set(event_target_value(&ev))
-                                    disabled=move || request_pending.get()
+                                    disabled=request_pending
                                 />
                             </div>
 
                             <button
                                 type="submit"
                                 class=DEFAULT_BUTTON_CLASS
-                                style=DEFAULT_BUTTON_STYLE
-                                disabled=move || request_pending.get()
+                                style=button_style
+                                disabled=request_pending
                             >
                                 {move || if request_pending.get() { "Sending code..." } else { "Send OTP Code" }}
                             </button>
                         </form>
 
                         {move || {
-                            request_result.get().and_then(|res| {
-                                if let Err(err) = res {
-                                    Some(view! {
-                                        <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                            {err}
-                                        </div>
-                                    }.into_any())
-                                } else {
-                                    None
-                                }
+                            request_result.with(|res| {
+                                res.as_ref().and_then(|inner| {
+                                    if let Err(err) = inner {
+                                        Some(view! {
+                                            <div style=error_box_style>
+                                                {err.clone()}
+                                            </div>
+                                        }.into_any())
+                                    } else {
+                                        None
+                                    }
+                                })
                             })
                         }}
                     </div>
@@ -146,32 +248,32 @@ pub fn OtpForm(
             } else {
                 view! {
                     <div>
-                        <p style="margin-top: 0; margin-bottom: 20px; font-size: 14px; color: rgba(255, 255, 255, 0.6); text-align: center;">
-                            "Enter the verification code sent to "<span style="color: #fff; font-weight: 500;">{email.get()}</span>
+                        <p style=p_style>
+                            "Enter the verification code sent to "<span style=email_highlight_style>{email}</span>
                         </p>
 
                         <form on:submit=handle_verify>
-                            <div style="display: flex; flex-direction: column; align-items: flex-start; width: 100%;">
-                                <label style="font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8);">
+                            <div style=form_field_style>
+                                <label style=label_style>
                                     "Verification Code"
                                 </label>
                                 <input
                                     type="text"
                                     placeholder="123456"
                                     class=DEFAULT_INPUT_CLASS
-                                    style=DEFAULT_INPUT_STYLE
+                                    style=input_style
                                     required
                                     prop:value=code
                                     on:input=move |ev| set_code.set(event_target_value(&ev))
-                                    disabled=move || verify_pending.get()
+                                    disabled=verify_pending
                                 />
                             </div>
 
                             <button
                                 type="submit"
                                 class=DEFAULT_BUTTON_CLASS
-                                style=DEFAULT_BUTTON_STYLE
-                                disabled=move || verify_pending.get()
+                                style=button_style
+                                disabled=verify_pending
                             >
                                 {move || if verify_pending.get() { "Verifying..." } else { "Verify Code" }}
                             </button>
@@ -179,38 +281,40 @@ pub fn OtpForm(
                             <button
                                 type="button"
                                 class="wasi-auth-secondary-button"
-                                style="margin-top: 10px; background: transparent; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 16px; color: rgba(255, 255, 255, 0.7); cursor: pointer; transition: all 0.2s ease-in-out; font-weight: 500; width: 100%; font-size: 14px;"
+                                style=secondary_button_style
                                 on:click=handle_back
-                                disabled=move || verify_pending.get()
+                                disabled=verify_pending
                             >
                                 "Change Email / Go Back"
                             </button>
                         </form>
 
                         {move || {
-                            verify_result.get().map(|res| {
-                                match res {
-                                    Ok(success) => {
-                                        if success {
-                                            view! {
-                                                <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; font-size: 13px; text-align: center;">
-                                                    "Verification successful!"
-                                                </div>
-                                            }.into_any()
-                                        } else {
-                                            view! {
-                                                <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                                    "Invalid verification code. Please try again."
-                                                </div>
-                                            }.into_any()
+                            verify_result.with(|res| {
+                                res.as_ref().map(|inner| {
+                                    match inner {
+                                        Ok(success) => {
+                                            if *success {
+                                                view! {
+                                                    <div style=success_box_style>
+                                                        "Verification successful!"
+                                                    </div>
+                                                }.into_any()
+                                            } else {
+                                                view! {
+                                                    <div style=error_box_style>
+                                                        "Invalid verification code. Please try again."
+                                                    </div>
+                                                }.into_any()
+                                            }
                                         }
+                                        Err(err) => view! {
+                                            <div style=error_box_style>
+                                                {err.clone()}
+                                            </div>
+                                        }.into_any()
                                     }
-                                    Err(err) => view! {
-                                        <div style="margin-top: 16px; padding: 10px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 13px; text-align: center;">
-                                            {err}
-                                        </div>
-                                    }.into_any()
-                                }
+                                })
                             })
                         }}
                     </div>

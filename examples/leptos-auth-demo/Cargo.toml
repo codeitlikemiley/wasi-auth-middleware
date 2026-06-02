@@ -30,3 +30,6 @@ bytes = "1.7.2"
 serde.workspace = true
 serde_json.workspace = true
 
+[features]
+default = []
+passkey = ["leptos-wasi-ui/passkey"]

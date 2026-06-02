@@ -65,6 +65,7 @@ csr = [
     "dep:js-sys",
     "dep:web-sys",
 ]
+passkey = ["wasi-auth-core/passkey"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

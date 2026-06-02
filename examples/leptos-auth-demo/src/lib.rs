@@ -6,6 +6,11 @@ use leptos_wasi::prelude::Handler;
 use leptos_wasi_auth::UserSession;
 use leptos_wasi_ui::LoginForm;
 use leptos_wasi_ui::TotpSetup as TotpSetupForm;
+use leptos_wasi_ui::components::login_form::{OtpVerification, TotpVerification};
+use leptos_wasi_ui::components::totp_setup::TotpSetupVerification;
+use leptos_wasi_ui::{SessionList, MfaStatus};
+#[cfg(feature = "passkey")]
+use leptos_wasi_ui::PasskeyList;
 use tracing::info;
 use wasi_auth_core::OAuthConfig;
 use wasi_auth_traits::{
@@ -615,9 +620,9 @@ pub fn TotpSetup() -> impl IntoView {
         async move { setup_totp(email).await }
     });
 
-    let verify_action = Action::new(|(email, code): &(String, String)| {
-        let email = email.clone();
-        let code = code.clone();
+    let verify_action = Action::new(|verification: &TotpSetupVerification| {
+        let email = verification.email.clone();
+        let code = verification.code.clone();
         async move { verify_totp_login_action(email, code).await }
     });
 
@@ -625,8 +630,8 @@ pub fn TotpSetup() -> impl IntoView {
         setup_action.dispatch(email);
     });
 
-    let on_verify = Callback::new(move |(email, code): (String, String)| {
-        verify_action.dispatch((email, code));
+    let on_verify = Callback::new(move |verification: TotpSetupVerification| {
+        verify_action.dispatch(verification);
     });
 
     let uri = Signal::derive(move || setup_action.value().get().and_then(|res| res.ok()));
@@ -735,8 +740,8 @@ pub fn Login() -> impl IntoView {
 
     let passkey_login_pending = Signal::derive(move || false);
 
-    let on_submit_otp = Callback::new(move |(email, code): (String, String)| {
-        verify_otp_action.dispatch((email, code));
+    let on_submit_otp = Callback::new(move |verification: OtpVerification| {
+        verify_otp_action.dispatch((verification.email, verification.code));
     });
 
     let on_request_otp = Callback::new(move |email: String| {
@@ -747,8 +752,8 @@ pub fn Login() -> impl IntoView {
         request_magic_link_action.dispatch(email);
     });
 
-    let on_verify_totp = Callback::new(move |(email, code): (String, String)| {
-        verify_totp_action.dispatch((email, code));
+    let on_verify_totp = Callback::new(move |verification: TotpVerification| {
+        verify_totp_action.dispatch((verification.email, verification.code));
     });
 
     let navigate = leptos_router::hooks::use_navigate();
@@ -824,6 +829,116 @@ pub fn Dashboard() -> impl IntoView {
         logout_action.dispatch(());
     };
 
+    // Mock signals/callbacks for SessionList
+    let (sessions, set_sessions) = signal(vec![
+        wasi_auth_traits::Session {
+            session_id: "session_current_12345".to_string(),
+            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            roles: vec!["user".to_string()],
+            expires_at: 1800000000,
+        },
+        wasi_auth_traits::Session {
+            session_id: "session_other_67890".to_string(),
+            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            roles: vec!["user".to_string()],
+            expires_at: 1800000000,
+        },
+    ]);
+    let (current_session_id, _) = signal(Some("session_current_12345".to_string()));
+    let (revoke_pending, set_revoke_pending) = signal(false);
+    let (revoke_result, set_revoke_result) = signal(None::<Result<(), String>>);
+
+    let on_revoke = Callback::new(move |id: String| {
+        set_revoke_pending.set(true);
+        leptos::task::spawn_local(async move {
+            set_sessions.update(|list| {
+                list.retain(|s| s.session_id != id);
+            });
+            set_revoke_pending.set(false);
+            set_revoke_result.set(Some(Ok(())));
+        });
+    });
+
+    let on_revoke_all = Callback::new(move |_: ()| {
+        set_revoke_pending.set(true);
+        leptos::task::spawn_local(async move {
+            set_sessions.update(|list| {
+                list.retain(|s| s.session_id == "session_current_12345");
+            });
+            set_revoke_pending.set(false);
+            set_revoke_result.set(Some(Ok(())));
+        });
+    });
+
+    // Mock signals/callbacks for MfaStatus
+    let (totp_enabled, set_totp_enabled) = signal(true);
+    let (disable_pending, set_disable_pending) = signal(false);
+    let (disable_result, set_disable_result) = signal(None::<Result<(), String>>);
+
+    let on_disable = Callback::new(move |_: ()| {
+        set_disable_pending.set(true);
+        leptos::task::spawn_local(async move {
+            set_totp_enabled.set(false);
+            set_disable_pending.set(false);
+            set_disable_result.set(Some(Ok(())));
+        });
+    });
+
+    // Mock signals/callbacks for PasskeyList
+    #[cfg(feature = "passkey")]
+    let (passkeys, set_passkeys) = signal(vec![
+        wasi_auth_core::passkey::StoredPasskey {
+            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            cred_id: "cred_1".to_string(),
+            public_key: "dummy_pk_1".to_string(),
+            name: "Personal MacBook Pro".to_string(),
+            created_at: 1700000000000,
+            last_used_at: 1700005000000,
+            counter: 0,
+        },
+        wasi_auth_core::passkey::StoredPasskey {
+            user_id: session.as_ref().map(|s| s.user_id.clone()).unwrap_or_else(|| "mock_user".to_string()),
+            cred_id: "cred_2".to_string(),
+            public_key: "dummy_pk_2".to_string(),
+            name: "Work iPad".to_string(),
+            created_at: 1700100000000,
+            last_used_at: 0,
+            counter: 0,
+        },
+    ]);
+    #[cfg(feature = "passkey")]
+    let (passkey_pending, set_passkey_pending) = signal(false);
+    #[cfg(feature = "passkey")]
+    let (rename_result, set_rename_result) = signal(None::<Result<(), String>>);
+    #[cfg(feature = "passkey")]
+    let (delete_result, set_delete_result) = signal(None::<Result<(), String>>);
+
+    #[cfg(feature = "passkey")]
+    let on_rename = Callback::new(move |(cred_id, new_name): (String, String)| {
+        set_passkey_pending.set(true);
+        leptos::task::spawn_local(async move {
+            set_passkeys.update(|list| {
+                if let Some(pk) = list.iter_mut().find(|p| p.cred_id == cred_id) {
+                    pk.name = new_name;
+                }
+            });
+            set_passkey_pending.set(false);
+            set_rename_result.set(Some(Ok(())));
+        });
+    });
+
+    #[cfg(feature = "passkey")]
+    let on_delete = Callback::new(move |cred_id: String| {
+        set_passkey_pending.set(true);
+        leptos::task::spawn_local(async move {
+            set_passkeys.update(|list| {
+                list.retain(|p| p.cred_id != cred_id);
+            });
+            set_passkey_pending.set(false);
+            set_delete_result.set(Some(Ok(())));
+        });
+    });
+
     view! {
         <div style="background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 48px; width: 100%; max-width: 800px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3);">
             <h2 style="font-size: 1.75rem; margin-bottom: 16px; font-weight: 700; letter-spacing: -0.025em; color: #ffffff;">"User Console"</h2>
@@ -851,13 +966,50 @@ pub fn Dashboard() -> impl IntoView {
                                 <span style="display: inline-block; padding: 4px 8px; font-size: 0.75rem; font-weight: 700; border-radius: 9999px; text-transform: uppercase; background: rgba(168, 85, 247, 0.2); color: #c084fc;">{user.roles.join(", ")}</span>
                             </div>
                         </div>
-                        <div style="display: flex; gap: 12px;">
+                        <div style="display: flex; gap: 12px; margin-bottom: 30px;">
                             <form on:submit=on_logout style="margin: 0;">
                                 <button type="submit" style="display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; outline: none; color: white; background: linear-gradient(135deg, #ef4444, #f43f5e);">
                                     {move || if logout_action.pending().get() { "Signing Out..." } else { "Sign Out" }}
                                 </button>
                             </form>
                             <a href="/totp-setup" style="display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; outline: none; color: white; background: linear-gradient(135deg, #10b981, #14b8a6); text-decoration: none; box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);">"Set up TOTP (MFA)"</a>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 24px;">
+                            <SessionList
+                                sessions=sessions
+                                current_session_id=current_session_id
+                                on_revoke=on_revoke
+                                on_revoke_all=on_revoke_all
+                                revoke_pending=revoke_pending
+                                revoke_result=revoke_result
+                            />
+                            
+                            <MfaStatus
+                                totp_enabled=totp_enabled
+                                on_disable=on_disable
+                                disable_pending=disable_pending
+                                disable_result=disable_result
+                            />
+
+                            {move || {
+                                #[cfg(feature = "passkey")]
+                                {
+                                    Some(view! {
+                                        <PasskeyList
+                                            passkeys=passkeys
+                                            on_delete=on_delete
+                                            on_rename=on_rename
+                                            pending=passkey_pending
+                                            rename_result=rename_result
+                                            delete_result=delete_result
+                                        />
+                                    })
+                                }
+                                #[cfg(not(feature = "passkey"))]
+                                {
+                                    None::<leptos::prelude::AnyView>
+                                }
+                            }}
                         </div>
                     </div>
                 }.into_any(),

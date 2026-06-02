@@ -1,7 +1,6 @@
 use leptos::prelude::*;
 
 const DEFAULT_BUTTON_CLASS: &str = "wasi-auth-passkey-button";
-const DEFAULT_BUTTON_STYLE: &str = "background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 10px 20px; color: #fff; cursor: pointer; font-weight: 500; font-family: sans-serif; transition: all 0.2s ease-in-out; display: inline-flex; align-items: center; justify-content: center; gap: 8px;";
 
 #[cfg(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr")))]
 use wasm_bindgen::prelude::*;
@@ -193,50 +192,79 @@ async fn run_login_ceremony(options_json: String) -> Result<String, String> {
     Ok(response_json)
 }
 
-#[component]
-pub fn PasskeyRegisterButton(
-    #[prop(optional, into)] class: Option<String>,
-    #[prop(optional, into)] style: Option<String>,
-    #[prop(into)] options: Signal<Option<String>>,
-    on_register_success: Callback<String>,
-    on_register_error: Callback<String>,
-    #[prop(into)] pending: Signal<bool>,
-    #[prop(optional)] on_click: Option<Callback<()>>,
-) -> impl IntoView {
-    let merged_class = format!("{} {}", DEFAULT_BUTTON_CLASS, class.unwrap_or_default());
-    let merged_style = format!("{}; {}", DEFAULT_BUTTON_STYLE, style.unwrap_or_default());
+// Fallback stubs for non-wasm32 environments to keep component code clean and avoid conditional compilation blocks inside components
+#[cfg(not(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr"))))]
+async fn run_register_ceremony(_options_json: String) -> Result<String, String> {
+    Err("WebAuthn register ceremony is only supported in browser environments".to_string())
+}
 
+#[cfg(not(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr"))))]
+async fn run_login_ceremony(_options_json: String) -> Result<String, String> {
+    Err("WebAuthn login ceremony is only supported in browser environments".to_string())
+}
+
+/// Generic private button component that handles ceremony execution, error handling,
+/// dynamic class/style merging, and reactive signal observation.
+#[allow(clippy::too_many_arguments)]
+fn passkey_button_internal<F, Fut>(
+    class: Option<TextProp>,
+    style: Option<TextProp>,
+    options: Signal<Option<String>>,
+    pending: Signal<bool>,
+    on_click: Option<Callback<()>>,
+    on_success: Callback<String>,
+    on_error: Callback<String>,
+    default_text: &'static str,
+    ceremony_fn: F,
+    icon: impl IntoView + 'static,
+    use_default_styles: bool,
+) -> impl IntoView
+where
+    F: Fn(String) -> Fut + Clone + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<String, String>> + Send + 'static,
+{
+    let merged_class = move || {
+        let user_class = class
+            .as_ref()
+            .map(|c| format!(" {}", c.get()))
+            .unwrap_or_default();
+        format!("{}{}", DEFAULT_BUTTON_CLASS, user_class)
+    };
+    let merged_style = move || {
+        style
+            .as_ref()
+            .map(|s| s.get().to_string())
+            .unwrap_or_default()
+    };
     let (waiting_for_options, set_waiting_for_options) = leptos::prelude::signal(false);
 
-    #[cfg(not(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr"))))]
-    {
-        let _ = options;
-        let _ = on_register_success;
-        let _ = on_register_error;
-        let _ = waiting_for_options;
-        let _ = set_waiting_for_options;
-    }
+    let ceremony_fn_clone = ceremony_fn.clone();
+    let on_success_clone = on_success;
+    let on_error_clone = on_error;
 
-    #[cfg(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr")))]
-    {
-        let on_success = on_register_success.clone();
-        let on_error = on_register_error.clone();
-        Effect::new(move |_| {
-            if waiting_for_options.get() {
-                if let Some(opt_str) = options.get() {
-                    set_waiting_for_options.set(false);
-                    let on_success = on_success.clone();
-                    let on_error = on_error.clone();
-                    leptos::prelude::spawn_local(async move {
-                        match run_register_ceremony(opt_str).await {
-                            Ok(res) => on_success.run(res),
-                            Err(err) => on_error.run(err),
-                        }
-                    });
-                }
+    // Effect that runs once options become available (e.g. after a click fetches them)
+    Effect::new(move |_| {
+        // If ceremony is no longer pending and options are still None (e.g., fetching failed),
+        // reset the waiting flag to prevent UI from locking.
+        if !pending.get() && options.with(|opt| opt.is_none()) {
+            set_waiting_for_options.set(false);
+        }
+
+        // Use untrack here to avoid setting up a cyclic tracking dependency on waiting_for_options
+        if waiting_for_options.get_untracked() {
+            let opt_str_opt = options.with(|opt| opt.clone());
+            if let Some(opt_str) = opt_str_opt {
+                set_waiting_for_options.set(false);
+                let ceremony_fn = ceremony_fn_clone.clone();
+                leptos::task::spawn_local(async move {
+                    match ceremony_fn(opt_str).await {
+                        Ok(res) => on_success_clone.run(res),
+                        Err(err) => on_error_clone.run(err),
+                    }
+                });
             }
-        });
-    }
+        }
+    });
 
     let handle_click = move |_| {
         if pending.get() {
@@ -246,24 +274,56 @@ pub fn PasskeyRegisterButton(
             cb.run(());
         }
 
-        #[cfg(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr")))]
-        {
-            if let Some(opt_str) = options.get() {
-                let on_success = on_register_success.clone();
-                let on_error = on_register_error.clone();
-                leptos::prelude::spawn_local(async move {
-                    match run_register_ceremony(opt_str).await {
-                        Ok(res) => on_success.run(res),
-                        Err(err) => on_error.run(err),
-                    }
-                });
-            } else {
-                set_waiting_for_options.set(true);
-            }
+        if let Some(opt_str) = options.with(|opt| opt.clone()) {
+            let ceremony_fn = ceremony_fn.clone();
+            leptos::task::spawn_local(async move {
+                match ceremony_fn(opt_str).await {
+                    Ok(res) => on_success.run(res),
+                    Err(err) => on_error.run(err),
+                }
+            });
+        } else {
+            set_waiting_for_options.set(true);
         }
     };
 
     view! {
+        {if use_default_styles {
+            Some(view! {
+                <style>
+                    {r#"
+                    .wasi-auth-passkey-button {
+                        background: rgba(255, 255, 255, 0.08);
+                        backdrop-filter: blur(16px);
+                        -webkit-backdrop-filter: blur(16px);
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+                        border-radius: 8px;
+                        padding: 10px 20px;
+                        color: #fff;
+                        cursor: pointer;
+                        font-weight: 500;
+                        font-family: sans-serif;
+                        transition: all 0.2s ease-in-out;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                    }
+                    .wasi-auth-passkey-button:hover:not(:disabled) {
+                        background: rgba(255, 255, 255, 0.15) !important;
+                        border-color: rgba(255, 255, 255, 0.2) !important;
+                    }
+                    .wasi-auth-passkey-button:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                    }
+                    "#}
+                </style>
+            })
+        } else {
+            None
+        }}
         <button
             type="button"
             class=merged_class
@@ -271,97 +331,77 @@ pub fn PasskeyRegisterButton(
             on:click=handle_click
             disabled=move || pending.get()
         >
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width: 18px; height: 18px; flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m-2 4a5 5 0 11-4-4 1.9 1.9 0 011 0M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {move || if pending.get() { "Starting ceremony..." } else { "Register Passkey" }}
+            {icon}
+            {move || if pending.get() { "Starting ceremony..." } else { default_text }}
         </button>
     }
 }
 
 #[component]
+pub fn PasskeyRegisterButton(
+    #[prop(optional, into)] class: Option<TextProp>,
+    #[prop(optional, into)] style: Option<TextProp>,
+    #[prop(into)] options: Signal<Option<String>>,
+    on_register_success: Callback<String>,
+    on_register_error: Callback<String>,
+    #[prop(into)] pending: Signal<bool>,
+    #[prop(optional)] on_click: Option<Callback<()>>,
+    #[prop(optional, default = true)] use_default_styles: bool,
+) -> impl IntoView {
+    let icon = view! {
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width: 18px; height: 18px; flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m-2 4a5 5 0 11-4-4 1.9 1.9 0 011 0M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+    };
+
+    view! {
+        {passkey_button_internal(
+            class,
+            style,
+            options,
+            pending,
+            on_click,
+            on_register_success,
+            on_register_error,
+            "Register Passkey",
+            run_register_ceremony,
+            icon,
+            use_default_styles,
+        )}
+    }
+}
+
+#[component]
 pub fn PasskeyLoginButton(
-    #[prop(optional, into)] class: Option<String>,
-    #[prop(optional, into)] style: Option<String>,
+    #[prop(optional, into)] class: Option<TextProp>,
+    #[prop(optional, into)] style: Option<TextProp>,
     #[prop(into)] options: Signal<Option<String>>,
     on_login_success: Callback<String>,
     on_login_error: Callback<String>,
     #[prop(into)] pending: Signal<bool>,
     #[prop(optional)] on_click: Option<Callback<()>>,
+    #[prop(optional, default = true)] use_default_styles: bool,
 ) -> impl IntoView {
-    let merged_class = format!("{} {}", DEFAULT_BUTTON_CLASS, class.unwrap_or_default());
-    let merged_style = format!("{}; {}", DEFAULT_BUTTON_STYLE, style.unwrap_or_default());
-
-    let (waiting_for_options, set_waiting_for_options) = leptos::prelude::signal(false);
-
-    #[cfg(not(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr"))))]
-    {
-        let _ = options;
-        let _ = on_login_success;
-        let _ = on_login_error;
-        let _ = waiting_for_options;
-        let _ = set_waiting_for_options;
-    }
-
-    #[cfg(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr")))]
-    {
-        let on_success = on_login_success.clone();
-        let on_error = on_login_error.clone();
-        Effect::new(move |_| {
-            if waiting_for_options.get() {
-                if let Some(opt_str) = options.get() {
-                    set_waiting_for_options.set(false);
-                    let on_success = on_success.clone();
-                    let on_error = on_error.clone();
-                    leptos::prelude::spawn_local(async move {
-                        match run_login_ceremony(opt_str).await {
-                            Ok(res) => on_success.run(res),
-                            Err(err) => on_error.run(err),
-                        }
-                    });
-                }
-            }
-        });
-    }
-
-    let handle_click = move |_| {
-        if pending.get() {
-            return;
-        }
-        if let Some(ref cb) = on_click {
-            cb.run(());
-        }
-
-        #[cfg(all(target_arch = "wasm32", any(feature = "hydrate", feature = "csr")))]
-        {
-            if let Some(opt_str) = options.get() {
-                let on_success = on_login_success.clone();
-                let on_error = on_login_error.clone();
-                leptos::prelude::spawn_local(async move {
-                    match run_login_ceremony(opt_str).await {
-                        Ok(res) => on_success.run(res),
-                        Err(err) => on_error.run(err),
-                    }
-                });
-            } else {
-                set_waiting_for_options.set(true);
-            }
-        }
+    let icon = view! {
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width: 18px; height: 18px; flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 009 11a5 5 0 00-10 0c0 1.05.15 2.07.433 3.036l.64 2.222A3.01 3.01 0 003 18.11V21h3v-2.89a3 3 0 01.378-1.468z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-3.517 1.009-6.799 2.753-9.571m3.44 2.04l-.054.09A13.916 13.916 0 0015 11a5 5 0 0010 0c0-1.05-.15-2.07-.433-3.036l-.64-2.222A3.01 3.01 0 0021 5.89V3h-3v2.89a3 3 0 01-.378 1.468z" />
+        </svg>
     };
 
     view! {
-        <button
-            type="button"
-            class=merged_class
-            style=merged_style
-            on:click=handle_click
-            disabled=move || pending.get()
-        >
-            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="width: 18px; height: 18px; flex-shrink: 0;" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 009 11a5 5 0 00-10 0c0 1.05.15 2.07.433 3.036l.64 2.222A3.01 3.01 0 003 18.11V21h3v-2.89a3 3 0 01.378-1.468z" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0-3.517 1.009-6.799 2.753-9.571m3.44 2.04l-.054.09A13.916 13.916 0 0015 11a5 5 0 0010 0c0-1.05-.15-2.07-.433-3.036l-.64-2.222A3.01 3.01 0 0021 5.89V3h-3v2.89a3 3 0 01-.378 1.468z" />
-            </svg>
-            {move || if pending.get() { "Starting ceremony..." } else { "Login with Passkey" }}
-        </button>
+        {passkey_button_internal(
+            class,
+            style,
+            options,
+            pending,
+            on_click,
+            on_login_success,
+            on_login_error,
+            "Login with Passkey",
+            run_login_ceremony,
+            icon,
+            use_default_styles,
+        )}
     }
 }
