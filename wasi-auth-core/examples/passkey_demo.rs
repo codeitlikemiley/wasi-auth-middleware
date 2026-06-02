@@ -20,7 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wasi_auth_core::passkey::*;
 use wasi_auth_traits::InMemoryStorage;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Enable logging
     tracing_subscriber::fmt::init();
