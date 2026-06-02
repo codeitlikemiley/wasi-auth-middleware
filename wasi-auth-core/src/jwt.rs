@@ -141,36 +141,6 @@ pub fn generate_jwt(
     Ok(format!("{}.{}", signing_input, signature_b64))
 }
 
-/// Verifies and decodes a compact RS256 JWT, returning the embedded [`Claims`].
-///
-/// The verification pipeline performs the following checks **in order**:
-///
-/// 1. **Structure** — the token must consist of exactly three Base64url-encoded
-///    segments separated by `.`.
-/// 2. **Algorithm** — the header `alg` field must be `"RS256"`; any other value
-///    is rejected immediately (algorithm confusion protection).
-/// 3. **Signature** — the RSASSA-PKCS1-v1_5/SHA-256 signature is verified
-///    against the supplied `public_key_pem`.
-/// 4. **Expiration** — the `exp` claim is compared to `now` with a **60-second
-///    leeway** (`exp + 60 > now`). Overflow of the addition is handled safely.
-/// 5. **Not Before** — if present, `claims.nbf` is verified to ensure it is
-///    not in the future, with a **60-second leeway** (`nbf - 60 <= now`).
-/// 6. **Audience** — `claims.aud` must exactly match `expected_aud`.
-/// 7. **Issuer** — `claims.iss` must exactly match `expected_iss`.
-///
-/// # Arguments
-///
-/// * `token` — the compact JWT string (`header.payload.signature`).
-/// * `public_key_pem` — the RSA public key in **SPKI PEM** format.
-/// * `expected_aud` — the audience value this service expects.
-/// * `expected_iss` — the issuer value this service expects.
-/// * `now` — the current Unix timestamp (seconds) used for expiry comparison.
-///
-/// # Errors
-///
-/// Returns granular [`AuthError`] variants for any validation failure (bad format,
-/// unsupported algorithm, invalid signature, expired token, not-yet-valid token,
-/// or audience/issuer mismatch).
 /// Configuration options for JWT validation.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ValidationOptions {

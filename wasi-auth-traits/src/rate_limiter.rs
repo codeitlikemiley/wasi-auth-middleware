@@ -9,13 +9,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Automatically cleans up expired timestamps upon action recording to prevent memory growth.
 #[derive(Debug)]
 pub struct InMemoryRateLimiter {
+    /// Internal map tracking the history of action timestamps for each key.
     history: RwLock<HashMap<String, Vec<u64>>>,
+    /// Sliding window duration in seconds. Timestamps older than `now - window_secs` are pruned.
     window_secs: u64,
+    /// Specific maximum limits mapped by action name (e.g., "send_otp" -> 5).
     limits: HashMap<String, u32>,
+    /// Fallback maximum limit for any action not specified in the `limits` map.
     default_limit: u32,
 }
 
 impl Default for InMemoryRateLimiter {
+    /// Creates an `InMemoryRateLimiter` with a 15-minute sliding window,
+    /// a default limit of 100 attempts, and preconfigured limits for:
+    /// - `"send_otp"`: 5 attempts
+    /// - `"verify_otp"`: 10 attempts
     fn default() -> Self {
         let mut limits = HashMap::new();
         limits.insert("send_otp".to_string(), 5);
@@ -30,7 +38,12 @@ impl Default for InMemoryRateLimiter {
 }
 
 impl InMemoryRateLimiter {
-    /// Creates a new `InMemoryRateLimiter` with custom window duration and default limits.
+    /// Creates a new `InMemoryRateLimiter` with a custom sliding window duration and fallback limit.
+    ///
+    /// # Arguments
+    ///
+    /// * `window_secs` - The length of the sliding window in seconds.
+    /// * `default_limit` - The default number of allowed actions in the window if no custom limit is set.
     pub fn new(window_secs: u64, default_limit: u32) -> Self {
         Self {
             history: RwLock::new(HashMap::new()),
@@ -40,7 +53,12 @@ impl InMemoryRateLimiter {
         }
     }
 
-    /// Configures a custom limit for a specific action name.
+    /// Configures a custom maximum limit for a specific action name.
+    ///
+    /// # Arguments
+    ///
+    /// * `action` - The action name (e.g., "login", "reset_password").
+    /// * `limit` - The maximum number of allowed attempts in the window.
     pub fn with_limit(mut self, action: &str, limit: u32) -> Self {
         self.limits.insert(action.to_string(), limit);
         self

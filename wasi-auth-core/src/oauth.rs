@@ -78,11 +78,6 @@ pub trait HttpClient {
     fn get(&self, url: &str, headers: &[(&str, &str)]) -> Result<String, AuthError>;
 }
 
-/// A stateless OAuth 2.0 / OpenID Connect client.
-///
-/// All methods are **static** — `Oauth2Client` carries no state and is never
-/// instantiated. Configuration is passed in via [`OAuthConfig`] and HTTP I/O
-/// is delegated to any [`HttpClient`] implementor.
 /// A PKCE (Proof Key for Code Exchange) challenge.
 ///
 /// Used to secure the OAuth 2.0 Authorization Code flow against interception attacks.
@@ -125,6 +120,11 @@ impl PkceChallenge {
     }
 }
 
+/// A stateless OAuth 2.0 / OpenID Connect client.
+///
+/// All methods are **static** — `Oauth2Client` carries no state and is never
+/// instantiated. Configuration is passed in via [`OAuthConfig`] and HTTP I/O
+/// is delegated to any [`HttpClient`] implementor.
 pub struct Oauth2Client;
 
 impl Oauth2Client {
