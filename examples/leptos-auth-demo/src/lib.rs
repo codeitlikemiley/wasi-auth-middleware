@@ -68,16 +68,18 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
+        let mock_port = std::env::var("MOCK_AUTH_PORT").unwrap_or_else(|_| "8081".to_string());
+        let app_port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
         Self {
             storage: std::sync::Arc::new(InMemoryStorage::new()),
             email_sender: std::sync::Arc::new(StdoutEmail::new()),
             oauth_config: OAuthConfig {
                 client_id: "client-id-123".to_string(),
                 client_secret: "client-secret-123".to_string(),
-                auth_url: "http://127.0.0.1:8080/authorize".to_string(),
-                token_url: "http://127.0.0.1:8080/token".to_string(),
-                userinfo_url: Some("http://127.0.0.1:8080/userinfo".to_string()),
-                redirect_uri: "http://127.0.0.1:8080/callback".to_string(),
+                auth_url: format!("http://127.0.0.1:{}/authorize", mock_port),
+                token_url: format!("http://127.0.0.1:{}/token", mock_port),
+                userinfo_url: Some(format!("http://127.0.0.1:{}/userinfo", mock_port)),
+                redirect_uri: format!("http://127.0.0.1:{}/callback", app_port),
             },
             rate_limiter: std::sync::Arc::new(InMemoryRateLimiter::default()),
             private_key_pem: PRIV_KEY_PEM,

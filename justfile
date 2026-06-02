@@ -50,8 +50,8 @@ example name:
               --plug target/wasm32-wasip2/debug/leptos_auth_demo.wasm \
               -o target/composed_demo.wasm
 
-            echo "Starting mock auth server on port 8080..."
-            target/debug/mock-auth-server 8080 &
+            echo "Starting mock auth server on port 8081..."
+            target/debug/mock-auth-server 8081 &
             MOCK_PID=$!
 
             cleanup() {
@@ -75,6 +75,8 @@ example name:
             export JWT_PUBLIC_KEY="$(cat target/public_key_demo.pem)"
             export JWT_AUDIENCE="client-id-123"
             export JWT_ISSUER="leptos-auth-demo"
+            export MOCK_AUTH_PORT="8081"
+            export PORT="8080"
 
             wasmtime serve target/composed_demo.wasm \
               --addr 127.0.0.1:8080 \
