@@ -50,3 +50,104 @@ wasi-auth-core = { version = "0.1.0", path = "../wasi-auth-core" }
 - **`finish_passkey_registration`**: Verifies and records the credential creation response.
 - **`start_passkey_login`**: Generates request options for login.
 - **`finish_passkey_login`**: Verifies the assertion response and returns the authenticated user's ID.
+
+## Usage Examples
+
+### 1. Generating and Verifying JWTs (RS256)
+
+`wasi-auth-core` provides a pure-Rust RS256 token signer and verifier using `rsa` and `sha2`:
+
+```rust,ignore
+use wasi_auth_core::jwt::{generate_jwt, verify_jwt, Claims};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let private_key_pem = "... your private key PEM ...";
+    let public_key_pem = "... your public key PEM ...";
+
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let claims = Claims {
+        sub: "user_12345".to_string(),
+        iss: "my-app".to_string(),
+        aud: "my-audience".to_string(),
+        exp: now + 3600, // 1 hour expiry
+        iat: now,
+        nbf: now,
+        jti: "unique-token-id".to_string(),
+        roles: vec!["user".to_string()],
+        name: Some("Alice Smith".to_string()),
+        email: Some("alice@example.com".to_string()),
+    };
+
+    // 1. Generate a signed JWT
+    let token = generate_jwt(&claims, private_key_pem)?;
+    println!("Issued Token: {}", token);
+
+    // 2. Verify the signed JWT
+    let verified_claims = verify_jwt(
+        &token,
+        public_key_pem,
+        "my-audience",
+        "my-app"
+    )?;
+    println!("Token Verified! User ID: {}", verified_claims.sub);
+    Ok(())
+}
+```
+
+### 2. Setting Up TOTP MFA
+
+You can generate and verify Time-based One-Time Passwords (TOTP):
+
+```rust,ignore
+use wasi_auth_core::totp::{generate_totp_secret, verify_totp_code, get_totp_qr_uri};
+
+fn main() {
+    // 1. Generate a new base32 secret
+    let secret = generate_totp_secret();
+    println!("User TOTP Secret (Base32): {}", secret);
+
+    // 2. Generate a provisioning URI (for QR codes)
+    let qr_uri = get_totp_qr_uri("Alice", "MyCompany", &secret);
+    println!("QR Code Provisioning URI: {}", qr_uri);
+
+    // 3. Verify a 6-digit code supplied by the user (with ±1 step leeway)
+    let code = "123456"; // code entered by user
+    let is_valid = verify_totp_code(&secret, code);
+    println!("Is code valid? {}", is_valid);
+}
+```
+
+### 3. WebAuthn/Passkey Login Ceremony
+
+Using the passkey wrappers to generate challenge options and verify assertion responses:
+
+```rust,ignore
+use wasi_auth_core::passkey::{start_passkey_login, finish_passkey_login};
+use wasi_auth_traits::PasskeyStore;
+
+fn handle_login_ceremony(
+    user_id: &str,
+    client_response_json: &str,
+    store: &dyn PasskeyStore
+) -> Result<String, Box<dyn std::error::Error>> {
+    // 1. Start the login ceremony, generating WebAuthn options and challenge
+    let login_options = start_passkey_login(
+        user_id,
+        "my-app.com", // Relying Party ID
+        store
+    )?;
+    
+    // Send `login_options` JSON payload to the client/browser...
+    
+    // 2. Once the client returns the authenticator assertion, verify it
+    let verified_user_id = finish_passkey_login(
+        "my-app.com",
+        "https://my-app.com", // Origin
+        client_response_json,
+        store
+    )?;
+    
+    Ok(verified_user_id)
+}
+```
