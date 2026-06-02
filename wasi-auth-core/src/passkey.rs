@@ -5,9 +5,9 @@ use wasi_auth_traits::AuthError;
 pub use passkey_server::{
     PasskeyConfig, PasskeyStore,
     types::{
-        LoginResponse, PasskeyState, PublicKeyCredentialCreationOptions,
-        PublicKeyCredentialRequestOptions, RegistrationResponse, StoredPasskey,
-        AttestationResponse, AssertionResponse,
+        AssertionResponse, AttestationResponse, LoginResponse, PasskeyState,
+        PublicKeyCredentialCreationOptions, PublicKeyCredentialRequestOptions,
+        RegistrationResponse, StoredPasskey,
     },
 };
 

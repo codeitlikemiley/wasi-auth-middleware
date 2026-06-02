@@ -39,25 +39,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let username = "alice@example.com";
     let display_name = "Alice Liddell";
 
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_millis() as i64;
+    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
 
     // ==========================================
     // CEREMONY 1: Passkey Registration (Create)
     // ==========================================
     println!("\n--- 1. Starting Passkey Registration ---");
-    let reg_options = start_passkey_registration(
-        &store,
-        user_id,
-        username,
-        display_name,
-        &config,
-        now_ms,
-    )
-    .await?;
+    let reg_options =
+        start_passkey_registration(&store, user_id, username, display_name, &config, now_ms)
+            .await?;
 
-    println!("Registration Challenge Generated: {}", reg_options.challenge);
+    println!(
+        "Registration Challenge Generated: {}",
+        reg_options.challenge
+    );
     println!("Credential creation options serialized successfully!");
 
     // --- Simulating Browser Client Behavior (Create) ---
@@ -141,9 +136,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Back to Server ---
     println!("\n--- 4. Finishing Passkey Login ---");
-    let authenticated_user_id = finish_passkey_login(&store, &config, login_response, now_ms).await?;
+    let authenticated_user_id =
+        finish_passkey_login(&store, &config, login_response, now_ms).await?;
     println!("Assertion verified successfully!");
-    println!("User successfully authenticated as user ID: {}", authenticated_user_id);
+    println!(
+        "User successfully authenticated as user ID: {}",
+        authenticated_user_id
+    );
     assert_eq!(authenticated_user_id, user_id);
 
     println!("\n=== All Ceremonies Completed and Verified Successfully ===");

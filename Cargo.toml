@@ -9,6 +9,7 @@ members = [
     "examples/leptos-auth-demo",
     "tests/mock-auth-server",
     "tests/e2e-runner",
+    "leptos-wasi-ui",
 ]
 
 

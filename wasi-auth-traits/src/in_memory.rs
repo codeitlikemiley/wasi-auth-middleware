@@ -293,7 +293,11 @@ impl passkey_server::PasskeyStore for InMemoryStorage {
         Ok(())
     }
 
-    async fn get_passkey(&self, cred_id: &str) -> Result<Option<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError> {
+    async fn get_passkey(
+        &self,
+        cred_id: &str,
+    ) -> Result<Option<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
         let passkeys = self
             .passkeys
             .read()
@@ -301,7 +305,11 @@ impl passkey_server::PasskeyStore for InMemoryStorage {
         Ok(passkeys.get(cred_id).cloned())
     }
 
-    async fn list_passkeys(&self, user_id: String) -> Result<Vec<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError> {
+    async fn list_passkeys(
+        &self,
+        user_id: String,
+    ) -> Result<Vec<passkey_server::types::StoredPasskey>, passkey_server::error::PasskeyError>
+    {
         let passkeys = self
             .passkeys
             .read()
@@ -314,12 +322,19 @@ impl passkey_server::PasskeyStore for InMemoryStorage {
         Ok(user_keys)
     }
 
-    async fn delete_passkey(&self, user_id: String, cred_id: &str) -> Result<(), passkey_server::error::PasskeyError> {
+    async fn delete_passkey(
+        &self,
+        user_id: String,
+        cred_id: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
         let mut passkeys = self
             .passkeys
             .write()
             .map_err(|e| passkey_server::error::PasskeyError::DatabaseError(e.to_string()))?;
-        if passkeys.get(cred_id).is_some_and(|pk| pk.user_id == user_id) {
+        if passkeys
+            .get(cred_id)
+            .is_some_and(|pk| pk.user_id == user_id)
+        {
             passkeys.remove(cred_id);
         }
         Ok(())
@@ -342,7 +357,11 @@ impl passkey_server::PasskeyStore for InMemoryStorage {
         Ok(())
     }
 
-    async fn update_passkey_name(&self, cred_id: &str, new_name: &str) -> Result<(), passkey_server::error::PasskeyError> {
+    async fn update_passkey_name(
+        &self,
+        cred_id: &str,
+        new_name: &str,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
         let mut passkeys = self
             .passkeys
             .write()
@@ -353,7 +372,12 @@ impl passkey_server::PasskeyStore for InMemoryStorage {
         Ok(())
     }
 
-    async fn save_state(&self, id: &str, state_json: &str, expires_at: i64) -> Result<(), passkey_server::error::PasskeyError> {
+    async fn save_state(
+        &self,
+        id: &str,
+        state_json: &str,
+        expires_at: i64,
+    ) -> Result<(), passkey_server::error::PasskeyError> {
         let mut states = self
             .passkey_states
             .write()
@@ -367,7 +391,11 @@ impl passkey_server::PasskeyStore for InMemoryStorage {
         Ok(())
     }
 
-    async fn get_state(&self, id: &str) -> Result<Option<passkey_server::types::PasskeyState>, passkey_server::error::PasskeyError> {
+    async fn get_state(
+        &self,
+        id: &str,
+    ) -> Result<Option<passkey_server::types::PasskeyState>, passkey_server::error::PasskeyError>
+    {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)

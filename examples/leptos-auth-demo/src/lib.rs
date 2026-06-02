@@ -1,10 +1,11 @@
 #![allow(clippy::unused_unit, clippy::unit_arg, unused_variables)]
-use leptos::html;
 use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::path;
 use leptos_wasi::prelude::Handler;
 use leptos_wasi_auth::UserSession;
+use leptos_wasi_ui::LoginForm;
+use leptos_wasi_ui::TotpSetup as TotpSetupForm;
 use tracing::info;
 use wasi_auth_core::OAuthConfig;
 use wasi_auth_traits::{
@@ -609,9 +610,6 @@ pub fn MagicCallback() -> impl IntoView {
 
 #[component]
 pub fn TotpSetup() -> impl IntoView {
-    let email_input = NodeRef::<html::Input>::new();
-    let code_input = NodeRef::<html::Input>::new();
-
     let setup_action = Action::new(|email: &String| {
         let email = email.clone();
         async move { setup_totp(email).await }
@@ -623,18 +621,39 @@ pub fn TotpSetup() -> impl IntoView {
         async move { verify_totp_login_action(email, code).await }
     });
 
-    let on_setup = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        let email = email_input.get().unwrap().value();
+    let on_setup = Callback::new(move |email: String| {
         setup_action.dispatch(email);
-    };
+    });
 
-    let on_verify = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        let email = email_input.get().unwrap().value();
-        let code = code_input.get().unwrap().value();
+    let on_verify = Callback::new(move |(email, code): (String, String)| {
         verify_action.dispatch((email, code));
-    };
+    });
+
+    let uri = Signal::derive(move || setup_action.value().get().and_then(|res| res.ok()));
+
+    let setup_pending = Signal::derive(move || setup_action.pending().get());
+
+    let setup_result = Signal::derive(move || {
+        setup_action.value().get().map(|res| {
+            res.map(|uri| {
+                uri.split("secret=")
+                    .nth(1)
+                    .and_then(|s| s.split('&').next())
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .map_err(|e| e.to_string())
+        })
+    });
+
+    let verify_pending = Signal::derive(move || verify_action.pending().get());
+
+    let verify_result = Signal::derive(move || {
+        verify_action
+            .value()
+            .get()
+            .map(|res| res.map_err(|e| e.to_string()))
+    });
 
     let navigate = leptos_router::hooks::use_navigate();
 
@@ -645,82 +664,20 @@ pub fn TotpSetup() -> impl IntoView {
     });
 
     view! {
-        <div style="background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 40px; width: 100%; max-width: 480px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3);">
-            <h2 style="font-size: 1.75rem; margin-bottom: 8px; font-weight: 700; letter-spacing: -0.025em; color: #ffffff;">"MFA: TOTP Setup"</h2>
-            <p style="margin-bottom: 24px; color: #64748b; font-size: 0.95rem; line-height: 1.6;">"Register an authenticator app (Google Authenticator, Authy, etc.)."</p>
-
-            {move || {
-                match verify_action.value().get() {
-                    Some(Err(err)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(239, 68, 68, 0.2); text-align: left; background: rgba(239, 68, 68, 0.1); color: #f87171;">
-                            {err.to_string()}
-                        </div>
-                    }.into_any(),
-                    _ => view! {}.into_any(),
-                }
-            }}
-
-            <form on:submit=on_setup>
-                <div style="margin-bottom: 20px; text-align: left;">
-                    <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">"Email Address"</label>
-                    <input type="email" node_ref=email_input placeholder="name@domain.com" style="width: 100%; padding: 12px 16px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: white; font-size: 1rem; font-family: inherit; transition: all 0.2s ease;" required=true/>
-                </div>
-                <button type="submit" style="display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; outline: none; width: 100%; color: white; background: linear-gradient(135deg, #6366f1, #a855f7); box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3); margin-bottom: 20px;">
-                    {move || if setup_action.pending().get() { "Generating Secret..." } else { "Generate TOTP Key" }}
-                </button>
-            </form>
-
-            {move || {
-                match setup_action.value().get() {
-                    Some(Ok(uri)) => {
-                        let secret = uri.split("secret=").nth(1).and_then(|s| s.split('&').next()).unwrap_or("").to_string();
-                        let uri_clone = uri.clone();
-                        view! {
-                            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.08);">
-                                <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 20px; border: 1px solid rgba(168, 85, 247, 0.2); background: rgba(168, 85, 247, 0.1); color: #c084fc; word-break: break-all; text-align: left;">
-                                    <strong>"Secret Key: "</strong> <code style="font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">{secret}</code>
-                                    <br/><br/>
-                                    <strong>"Provisioning URI (for manual entry):"</strong>
-                                    <pre style="white-space: pre-wrap; font-size: 0.75rem; background: rgba(0,0,0,0.4); padding: 8px; border-radius: 6px; margin: 8px 0 0 0; color: #e2e8f0; font-family: monospace;">{uri_clone}</pre>
-                                </div>
-
-                                <form on:submit=on_verify>
-                                    <div style="margin-bottom: 20px; text-align: left;">
-                                        <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">"Enter 6-Digit Authenticator Code"</label>
-                                        <input type="text" node_ref=code_input placeholder="123456" style="width: 100%; padding: 12px 16px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: white; font-size: 1rem; font-family: inherit; transition: all 0.2s ease;" required=true/>
-                                    </div>
-                                    <button type="submit" style="display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; outline: none; width: 100%; color: white; background: linear-gradient(135deg, #10b981, #14b8a6); box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);">
-                                        {move || if verify_action.pending().get() { "Verifying..." } else { "Verify Code & Login" }}
-                                    </button>
-                                </form>
-                            </div>
-                        }.into_any()
-                    }
-                    Some(Err(err)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(239, 68, 68, 0.2); text-align: left; background: rgba(239, 68, 68, 0.1); color: #f87171;">
-                            {err.to_string()}
-                        </div>
-                    }.into_any(),
-                    None => view! {}.into_any()
-                }
-            }}
-
-            <div style="margin-top: 24px; text-align: center;">
-                <a href="/login" style="color: #64748b; font-size: 0.85rem; text-decoration: none;">"← Back to Login"</a>
-            </div>
-        </div>
+        <TotpSetupForm
+            uri=uri
+            setup_pending=setup_pending
+            setup_result=setup_result
+            verify_pending=verify_pending
+            verify_result=verify_result
+            on_setup=on_setup
+            on_verify=on_verify
+        />
     }
 }
 
 #[component]
 pub fn Login() -> impl IntoView {
-    let email_input = NodeRef::<html::Input>::new();
-    let otp_input = NodeRef::<html::Input>::new();
-    let totp_code_input = NodeRef::<html::Input>::new();
-
-    // Mode selection: 0 = OTP, 1 = Magic Link, 2 = TOTP Login
-    let auth_mode = RwSignal::new(0);
-
     let request_otp_action = Action::new(|email: &String| {
         let email = email.clone();
         async move { request_otp(email).await }
@@ -743,29 +700,56 @@ pub fn Login() -> impl IntoView {
         async move { verify_totp_login_action(email, code).await }
     });
 
-    let on_submit_main = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        let email = email_input.get().unwrap().value();
-        if auth_mode.get() == 0 {
-            request_otp_action.dispatch(email);
-        } else if auth_mode.get() == 1 {
-            request_magic_link_action.dispatch(email);
-        }
-    };
+    let request_otp_pending = Signal::derive(move || request_otp_action.pending().get());
+    let request_otp_result = Signal::derive(move || {
+        request_otp_action
+            .value()
+            .get()
+            .map(|res| res.map_err(|e| e.to_string()))
+    });
 
-    let on_verify_otp = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        let email = email_input.get().unwrap().value();
-        let otp = otp_input.get().unwrap().value();
-        verify_otp_action.dispatch((email, otp));
-    };
+    let verify_otp_pending = Signal::derive(move || verify_otp_action.pending().get());
+    let verify_otp_result = Signal::derive(move || {
+        verify_otp_action
+            .value()
+            .get()
+            .map(|res| res.map_err(|e| e.to_string()))
+    });
 
-    let on_verify_totp = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        let email = email_input.get().unwrap().value();
-        let code = totp_code_input.get().unwrap().value();
+    let request_magic_link_pending =
+        Signal::derive(move || request_magic_link_action.pending().get());
+    let request_magic_link_result = Signal::derive(move || {
+        request_magic_link_action
+            .value()
+            .get()
+            .map(|res| res.map_err(|e| e.to_string()))
+    });
+
+    let verify_totp_pending = Signal::derive(move || verify_totp_action.pending().get());
+    let verify_totp_result = Signal::derive(move || {
+        verify_totp_action
+            .value()
+            .get()
+            .map(|res| res.map_err(|e| e.to_string()))
+    });
+
+    let passkey_login_pending = Signal::derive(move || false);
+
+    let on_submit_otp = Callback::new(move |(email, code): (String, String)| {
+        verify_otp_action.dispatch((email, code));
+    });
+
+    let on_request_otp = Callback::new(move |email: String| {
+        request_otp_action.dispatch(email);
+    });
+
+    let on_request_magic_link = Callback::new(move |email: String| {
+        request_magic_link_action.dispatch(email);
+    });
+
+    let on_verify_totp = Callback::new(move |(email, code): (String, String)| {
         verify_totp_action.dispatch((email, code));
-    };
+    });
 
     let navigate = leptos_router::hooks::use_navigate();
 
@@ -785,124 +769,26 @@ pub fn Login() -> impl IntoView {
 
     view! {
         <div style="background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; padding: 40px; width: 100%; max-width: 480px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3);">
-            <h2 style="font-size: 1.75rem; margin-bottom: 8px; font-weight: 700; letter-spacing: -0.025em; color: #ffffff;">"Sign In"</h2>
+            <LoginForm
+                style="background: transparent; border: none; box-shadow: none; padding: 0; max-width: 100%; width: 100%;"
+                show_oauth=false
+                show_passkey=false
+                request_otp_pending=request_otp_pending
+                request_otp_result=request_otp_result
+                verify_otp_pending=verify_otp_pending
+                verify_otp_result=verify_otp_result
+                request_magic_link_pending=request_magic_link_pending
+                request_magic_link_result=request_magic_link_result
+                verify_totp_pending=verify_totp_pending
+                verify_totp_result=verify_totp_result
+                passkey_login_pending=passkey_login_pending
+                on_submit_otp=on_submit_otp
+                on_request_otp=on_request_otp
+                on_request_magic_link=on_request_magic_link
+                on_verify_totp=on_verify_totp
+            />
 
-            // Tab Selection for authentication methods
-            <div style="display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 12px;">
-                <button on:click=move |_| auth_mode.set(0) style=move || format!("flex: 1; padding: 8px; font-weight: 600; font-size: 0.85rem; border-radius: 6px; cursor: pointer; border: none; transition: all 0.2s; {}", if auth_mode.get() == 0 { "background: rgba(99, 102, 241, 0.2); color: #818cf8;" } else { "background: transparent; color: #64748b;" })>"OTP Code"</button>
-                <button on:click=move |_| auth_mode.set(1) style=move || format!("flex: 1; padding: 8px; font-weight: 600; font-size: 0.85rem; border-radius: 6px; cursor: pointer; border: none; transition: all 0.2s; {}", if auth_mode.get() == 1 { "background: rgba(168, 85, 247, 0.2); color: #c084fc;" } else { "background: transparent; color: #64748b;" })>"Magic Link"</button>
-                <button on:click=move |_| auth_mode.set(2) style=move || format!("flex: 1; padding: 8px; font-weight: 600; font-size: 0.85rem; border-radius: 6px; cursor: pointer; border: none; transition: all 0.2s; {}", if auth_mode.get() == 2 { "background: rgba(16, 185, 129, 0.2); color: #34d399;" } else { "background: transparent; color: #64748b;" })>"TOTP (MFA)"</button>
-            </div>
-
-            {move || {
-                match request_otp_action.value().get() {
-                    Some(Ok(msg)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(16, 185, 129, 0.2); text-align: left; background: rgba(16, 185, 129, 0.1); color: #34d399;">
-                            {msg}
-                        </div>
-                    }.into_any(),
-                    Some(Err(err)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(239, 68, 68, 0.2); text-align: left; background: rgba(239, 68, 68, 0.1); color: #f87171;">
-                            {err.to_string()}
-                        </div>
-                    }.into_any(),
-                    None => view! {}.into_any(),
-                }
-            }}
-
-            {move || {
-                match request_magic_link_action.value().get() {
-                    Some(Ok(msg)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(168, 85, 247, 0.2); text-align: left; background: rgba(168, 85, 247, 0.1); color: #c084fc; word-break: break-all;">
-                            {msg}
-                        </div>
-                    }.into_any(),
-                    Some(Err(err)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(239, 68, 68, 0.2); text-align: left; background: rgba(239, 68, 68, 0.1); color: #f87171;">
-                            {err.to_string()}
-                        </div>
-                    }.into_any(),
-                    None => view! {}.into_any(),
-                }
-            }}
-
-            {move || {
-                match verify_otp_action.value().get() {
-                    Some(Err(err)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(239, 68, 68, 0.2); text-align: left; background: rgba(239, 68, 68, 0.1); color: #f87171;">
-                            {err.to_string()}
-                        </div>
-                    }.into_any(),
-                    _ => view! {}.into_any(),
-                }
-            }}
-
-            {move || {
-                match verify_totp_action.value().get() {
-                    Some(Err(err)) => view! {
-                        <div style="padding: 12px 16px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 20px; border: 1px solid rgba(239, 68, 68, 0.2); text-align: left; background: rgba(239, 68, 68, 0.1); color: #f87171;">
-                            {err.to_string()}
-                        </div>
-                    }.into_any(),
-                    _ => view! {}.into_any(),
-                }
-            }}
-
-            {move || {
-                if auth_mode.get() != 2 {
-                    view! {
-                        <form on:submit=on_submit_main>
-                            <div style="margin-bottom: 20px; text-align: left;">
-                                <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">"Email Address"</label>
-                                <input type="email" node_ref=email_input placeholder="name@domain.com" style="width: 100%; padding: 12px 16px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: white; font-size: 1rem; font-family: inherit; transition: all 0.2s ease;" required=true/>
-                            </div>
-                            <button type="submit" style=move || format!("display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; outline: none; width: 100%; color: white; background: {}; margin-bottom: 20px;", if auth_mode.get() == 0 { "linear-gradient(135deg, #6366f1, #a855f7)" } else { "linear-gradient(135deg, #a855f7, #ec4899)" })>
-                                {move || {
-                                    if auth_mode.get() == 0 {
-                                        if request_otp_action.pending().get() { "Sending Code..." } else { "Send OTP Code" }
-                                    } else {
-                                        if request_magic_link_action.pending().get() { "Sending Link..." } else { "Send Magic Link" }
-                                    }
-                                }}
-                            </button>
-                        </form>
-                    }.into_any()
-                } else {
-                    view! {
-                        <form on:submit=on_verify_totp>
-                            <div style="margin-bottom: 20px; text-align: left;">
-                                <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">"Email Address"</label>
-                                <input type="email" node_ref=email_input placeholder="name@domain.com" style="width: 100%; padding: 12px 16px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: white; font-size: 1rem; font-family: inherit; transition: all 0.2s ease; margin-bottom: 16px;" required=true/>
-
-                                <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">"6-Digit Authenticator Code"</label>
-                                <input type="text" node_ref=totp_code_input placeholder="123456" style="width: 100%; padding: 12px 16px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: white; font-size: 1rem; font-family: inherit; transition: all 0.2s ease;" required=true/>
-                            </div>
-                            <button type="submit" style="display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; outline: none; width: 100%; color: white; background: linear-gradient(135deg, #10b981, #14b8a6); box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3); margin-bottom: 20px;">
-                                {move || if verify_totp_action.pending().get() { "Verifying..." } else { "Verify & Login" }}
-                            </button>
-                        </form>
-                    }.into_any()
-                }
-            }}
-
-            {move || {
-                if auth_mode.get() == 0 && request_otp_action.value().get().is_some() {
-                    view! {
-                        <form on:submit=on_verify_otp>
-                            <div style="margin-bottom: 20px; text-align: left;">
-                                <label style="display: block; font-size: 0.85rem; font-weight: 600; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">"6-Digit Verification Code"</label>
-                                <input type="text" node_ref=otp_input placeholder="123456" style="width: 100%; padding: 12px 16px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: white; font-size: 1rem; font-family: inherit; transition: all 0.2s ease;" required=true/>
-                            </div>
-                            <button type="submit" style="display: inline-flex; align-items: center; justify-content: center; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; border: none; outline: none; width: 100%; color: white; background: linear-gradient(135deg, #10b981, #14b8a6); box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.3);">
-                                {move || if verify_otp_action.pending().get() { "Verifying..." } else { "Verify & Login" }}
-                            </button>
-                        </form>
-                    }.into_any()
-                } else {
-                    view! {}.into_any()
-                }
-            }}
-
+            // The 4 functional mock OAuth links underneath
             <div style="display: flex; align-items: center; text-align: center; margin: 24px 0; color: #475569; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;"><div style="flex: 1; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-right: 1em;"></div>"or continue with"<div style="flex: 1; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-left: 1em;"></div></div>
 
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
