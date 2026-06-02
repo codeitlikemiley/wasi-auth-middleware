@@ -63,3 +63,98 @@ leptos_wasi_auth::set_trust_proxy_headers(true);
 | `csr` | Client-side rendering support. |
 | `unsafe-dev-fallback` | Skips cryptographic signature verification. **Do not use in production.** |
 | `leptos` | Explicit integration with the Leptos framework. |
+
+## Usage Guide
+
+To use `leptos-wasi-auth` in your Leptos application:
+
+### 1. Extracting and Providing Session Context in Leptos SSR
+
+In your downstream WASI application component, you must extract the user session from the incoming HTTP request headers (injected by the proxy middleware) and feed it into the Leptos context:
+
+```rust,ignore
+use leptos::*;
+use leptos_wasi::prelude::*;
+use leptos_wasi_auth::{provide_session_context, expect_session};
+use wasi_auth_traits::AuthStorage;
+
+pub fn handle_request(
+    request: wasi::http::types::IncomingRequest,
+    response_outparam: wasi::http::types::ResponseOutparam,
+    storage: &'static dyn AuthStorage,
+) {
+    let executor = WasiExecutor::new(leptos_wasi::executor::Mode::Stalled);
+    
+    executor.run_until(async {
+        Handler::build(request, response_outparam)
+            .unwrap()
+            .handle_with_context(
+                // Shell template render
+                move || view! { <App /> },
+                // Request context setup
+                move || {
+                    let parts = use_context::<http::request::Parts>();
+                    
+                    // Extracts JWT from cookies/headers or X-User-* headers 
+                    // and provides the reactive context
+                    provide_session_context(
+                        Some(storage),
+                        None,                 // Public key for local verification (if not relying on proxy)
+                        Some("client-id-123"), // Audience
+                        Some("my-app-issuer"), // Issuer
+                    );
+                }
+            )
+    });
+}
+```
+
+### 2. Protecting Server Functions
+
+You can enforce session and role verification inside Leptos `#[server]` functions using `expect_session()` or `expect_role()` guards:
+
+```rust,ignore
+use leptos::*;
+use leptos_wasi_auth::{expect_session, expect_role};
+
+#[server]
+pub async fn get_admin_reports() -> Result<Vec<String>, ServerFnError> {
+    // 1. Assert the user is fully logged in
+    let session = expect_session()?;
+    
+    // 2. Assert the user holds the 'admin' role
+    expect_role("admin")?;
+    
+    // Proceed with privileged database logic
+    Ok(vec!["Q2 Earnings Report.pdf".to_string()])
+}
+```
+
+### 3. Reading Session Context in Frontend Components
+
+Access the current user context reactively within components using `use_context`:
+
+```rust,ignore
+use leptos::*;
+use leptos_wasi_auth::UserSession;
+
+#[component]
+pub fn WelcomeWidget() -> impl IntoView {
+    // Read user session context
+    let session = use_context::<UserSession>();
+    
+    view! {
+        <div>
+            {move || match &session {
+                Some(user) => view! {
+                    <p>"Welcome back, " {user.name.clone().unwrap_or(user.user_id.clone())} "!"</p>
+                    <p class="role-badge">"Roles: " {user.roles.join(", ")}</p>
+                }.into_any(),
+                None => view! {
+                    <p>"Please log in to continue."</p>
+                }.into_any()
+            }}
+        </div>
+    }
+}
+```
