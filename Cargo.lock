@@ -3834,6 +3834,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "urlencoding",
  "wasi-auth-providers",
  "wasi-auth-traits",

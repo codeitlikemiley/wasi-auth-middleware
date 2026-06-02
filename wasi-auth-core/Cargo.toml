@@ -39,3 +39,4 @@ tokio = { workspace = true, features = ["rt", "macros"] }
 p256 = { version = "0.13.2", features = ["ecdsa"] }
 coset = "0.4.2"
 ciborium = "0.2.2"
+tracing-subscriber = { workspace = true }
