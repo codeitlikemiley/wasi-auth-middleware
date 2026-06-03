@@ -1,70 +1,81 @@
 # WASI Auth Middleware
 
-A modular, WebAssembly-compatible (WASI Preview 2) authentication framework for Rust. 
-Provides JWT session management, OAuth2/OIDC client logic, email OTP flows, and a composable HTTP proxy middleware — all targeting `wasm32-wasip2`.
+A modular, WebAssembly-compatible (WASI Preview 2) authentication framework for Rust.  
+JWT session management, OAuth2/OIDC flows, email OTP, TOTP MFA, WebAuthn passkeys, and a composable HTTP proxy middleware — all targeting `wasm32-wasip2`.
 
 ---
 
-## Core Features Highlight
+## Features
 
-- **WebAssembly-Native Cryptography**: Native token signing/verifying targeting WASI Preview 2 (`wasm32-wasip2`) without relying on unsafe external JavaScript runtimes.
-- **Pluggable Component Middleware**: A standalone proxy component (`wasi-auth-interceptor`) that can be plugged in front of any downstream WASI HTTP handler via standard component composition.
-- **Comprehensive Auth Protocols**: Built-in support for passwordless authentication, OAuth2/OIDC presets, TOTP Multi-Factor Authentication, and WebAuthn (Passkeys).
-- **Leptos Integration**: Pre-built Leptos middleware, routing guards, and styled, responsive UI auth components ready for Server-Side Rendering (SSR) and client-side hydration.
+- **WebAssembly-Native Crypto** — RSA JWT signing/verifying on `wasm32-wasip2` without external JS runtimes.
+- **Composable Proxy Middleware** — `wasi-auth-interceptor` plugs in front of any WASI HTTP handler via `wac plug`.
+- **Multi-Protocol Auth** — Passwordless OTP, Magic Links, OAuth2/OIDC presets, TOTP MFA, and WebAuthn Passkeys.
+- **Leptos Integration** — Session middleware, routing guards, and premium glassmorphism UI components for SSR/hydration.
+- **Pluggable Storage** — Swap in Redis, DynamoDB, SQLite, or Spin KV by implementing the `AuthStorage` trait.
 
 ---
 
-## Prerequisites Summary
-
-To compile and run components in this workspace, you need:
-
-| Prerequisite | Recommended Version |
-|---|---|
-| Rust Edition | `2024` |
-| Rust Stable Channel | ≥ 1.93.0 |
-| WASI Target | `wasm32-wasip2` |
+## Quick Install
 
 ```bash
-# Add the WASI target
 rustup target add wasm32-wasip2
+cargo build --workspace
 ```
 
-For more details on CLI tool setups (e.g., `Wasmtime`, `wac-cli`, `wasm-tools`, `just`), see the [Getting Started](docs/getting_started.md) guide.
+> Requires Rust ≥ 1.93.0, edition `2024`. See [Getting Started](docs/getting_started.md) for full prerequisites.
 
 ---
 
-## Documentation Directory
+## Documentation
 
-Explore the sub-guides to integrate and configure the auth framework:
+| Guide | What's Inside |
+|---|---|
+| 📖 [Getting Started](docs/getting_started.md) | Prerequisites, build & serve commands, use-case tutorials (proxy composition, Library/Gateway mode, custom traits, TOTP, Magic Links) |
+| 🧩 [UI Components](docs/ui_components.md) | How-to guide for `LoginForm`, `TotpSetup`, `SessionList`, `MfaStatus`, `PasskeyList` — props API + full working examples |
+| 🏗️ [Architecture](docs/architecture.md) | System topology, request flow, crate breakdown, security boundaries, MFA/WebAuthn flow designs |
+| ⚙️ [Configuration](docs/configuration.md) | Environment variables, `wasi-auth.toml` schema, cookie precedence, rate-limiter defaults, OAuth2 provider presets |
 
-* 📖 **[Getting Started](docs/getting_started.md)**: Step-by-step setup, compilation instructions, Wasmtime execution, and comprehensive use-case tutorials (standalone proxy composition, Leptos Library and Gateway modes, custom storage adapters, and TOTP/Magic Link integration).
-* 🏗️ **[Architecture](docs/architecture.md)**: High-level system topology, request lifecycle flow, Mermaid sequence diagrams, workspace crate breakdown, security boundaries, and MFA/WebAuthn flow designs.
-* ⚙️ **[Configuration Reference](docs/configuration.md)**: Complete guide to environment variables, TOML config file formats (`wasi-auth.toml`), cookie precedence priorities, rate-limiter defaults, and OAuth2 client presets.
+### Crate Documentation
 
----
+Each crate has its own README with API details:
 
-## Testing & Contribution
+| Crate | Purpose |
+|---|---|
+| [`wasi-auth-traits`](wasi-auth-traits/) | Core trait abstractions (`AuthStorage`, `EmailSender`, `RateLimiter`) and storage backends |
+| [`wasi-auth-core`](wasi-auth-core/) | JWT engine, OAuth2 client, OTP, TOTP, Magic Links, Passkey WebAuthn |
+| [`leptos-wasi-auth`](leptos-wasi-auth/) | Leptos framework integration (session context, guards, cookie helpers) |
+| [`leptos-wasi-ui`](leptos-wasi-ui/) | Styled Leptos UI components for auth workflows |
+| [`wasi-auth-providers`](wasi-auth-providers/) | OAuth2/OIDC client presets (Google, GitHub, Apple, Discord, etc.) |
+| [`wasi-auth-interceptor`](wasi-auth-interceptor/) | Standalone WASI HTTP proxy middleware |
 
-We welcome contributions! Please verify your changes before opening a pull request:
+### Example App
+
+The [`examples/leptos-auth-demo`](examples/leptos-auth-demo/) is a full SSR Leptos app demonstrating every auth flow and UI component. Run it with:
 
 ```bash
-# Run all checks, tests, cargo clippy, and formatting validations:
+just example
+```
+
+---
+
+## Contributing
+
+```bash
+# Run formatting, clippy, and tests:
 just check
 ```
 
-Make sure all code changes compile cleanly, meet standard formatting conventions, and contain corresponding tests.
+All changes must compile cleanly, pass tests, and follow standard formatting.
 
 ---
 
-## Issues & Vulnerabilities
+## Issues & Security
 
-- **Bug Reports**: If you find a bug, please search existing issues or open a new one on GitHub with reproduction steps.
-- **Security Vulnerabilities**: For security concerns or vulnerability reports, please do not file a public issue. Instead, report them securely following our security disclosure policy (e.g., emailing the maintainers directly or using GitHub private vulnerability reporting if enabled).
+- **Bugs** — Search existing issues or open a new one with reproduction steps.
+- **Security** — Do not file public issues. Use GitHub private vulnerability reporting or email maintainers directly.
 
 ---
 
 ## License
 
-This project is dual-licensed under:
-- **MIT License**
-- **Apache License, Version 2.0**
+Dual-licensed under **MIT** and **Apache 2.0**.

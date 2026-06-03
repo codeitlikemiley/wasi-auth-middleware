@@ -1,5 +1,7 @@
 # Architecture
 
+[← UI Components](ui_components.md) · **3 of 4** · [Next: Configuration →](configuration.md)
+
 This document serves as a high-level conceptual reference for system architects and developers wanting to understand how the WASI component model composition acts on requests, how the modular crates are divided, and the details of JWT signature validation, proxy routing, custom storage/email abstractions, and MFA / WebAuthn flows.
 
 ---
@@ -214,3 +216,7 @@ WebAuthn (Passkeys) uses asymmetric cryptography to eliminate password-based sec
 To protect brute-forceable authentication endpoints, the `RateLimiter` trait enables sliding window rate limiting. The default `InMemoryRateLimiter` logs each action timestamp within a rolling window (e.g., 900 seconds) and rejects incoming requests once the limit is exceeded. Preconfigured rate-limit profiles protect sensitive actions:
 - `"send_otp"`: Limited to 5 requests per window.
 - `"verify_otp"`: Limited to 10 requests per window.
+
+---
+
+[← UI Components](ui_components.md) · **3 of 4** · [Next: Configuration →](configuration.md)

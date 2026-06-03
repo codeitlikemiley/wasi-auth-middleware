@@ -1,5 +1,7 @@
 # Configuration Reference
 
+[← Architecture](architecture.md) · **4 of 4** · [Back to README](../README.md)
+
 This document serves as the single source of truth for runtime configurations, environment variables, file-based options, cookie security levels, and configuration schemas.
 
 ---
@@ -145,3 +147,7 @@ The `wasi-auth-providers` crate provides ready-to-use client presets for externa
     - Userinfo: `/2/users/me`
 - **Keycloak**: `keycloak::keycloak(client_id, client_secret, redirect_uri, server_url, realm)`
   - *Endpoints*: Constructs endpoints dynamically based on the Keycloak server URL and realm path prefix: `/realms/{realm}/protocol/openid-connect`.
+
+---
+
+[← Architecture](architecture.md) · **4 of 4** · [Back to README](../README.md)

@@ -1,5 +1,7 @@
 # Getting Started
 
+[← Back to README](../README.md) · **1 of 4** · [Next: UI Components →](ui_components.md)
+
 This guide provides step-by-step instructions, installation commands, configuration guides, and production-grade code examples for integrating and deploying the `wasi-auth` framework.
 
 ---
@@ -160,7 +162,7 @@ In Library Mode, your Leptos application is directly responsible for extracting 
 ### Server-Side Session Extraction
 Inside a Leptos server function or SSR route handler, call `extract_session_from_parts_with_options` to parse and validate the request:
 
-```rust
+```rust,no_run
 use leptos::prelude::*;
 use leptos_wasi_auth::{
     extract_session_from_parts_with_options,
@@ -228,7 +230,7 @@ pub async fn login_user(email: String, secret_otp: String) -> Result<bool, Serve
 ### Accessing Session in Route Handlers
 Extract user session context in routing logic:
 
-```rust
+```rust,no_run
 #[component]
 pub fn Dashboard() -> impl IntoView {
     // Session context is provided globally in SSR / Hydration flow
@@ -262,12 +264,12 @@ Set the environment variable:
 TRUST_PROXY_HEADERS=true
 ```
 Or enable programmatically inside your initialization code (e.g., in `main.rs`):
-```rust
+```rust,no_run
 leptos_wasi_auth::set_trust_proxy_headers(true);
 ```
 
 ### 2. Extract Session in Your Server Action
-```rust
+```rust,no_run
 #[server(GetUserInfo, "/api")]
 pub async fn get_user_info() -> Result<String, ServerFnError> {
     // Retrieve parts from the Leptos context
@@ -300,7 +302,7 @@ You can swap out the default in-memory or Spin SDK key-value storage for custom 
 ### 1. Custom `AuthStorage` Implementation
 Below is an example implementing `AuthStorage` mapped to an external key-value database connection:
 
-```rust
+```rust,no_run
 use wasi_auth_traits::{AuthStorage, AuthError, Session};
 
 pub struct MyRedisStorage {
@@ -397,7 +399,7 @@ impl AuthStorage for MyRedisStorage {
 ### 2. Custom `EmailSender` Implementation
 Here is an example sending transaction verification emails via SendGrid's API over standard outbound HTTP:
 
-```rust
+```rust,no_run
 use wasi_auth_traits::{EmailSender, AuthError};
 
 pub struct SendGridEmailSender {
@@ -440,7 +442,7 @@ impl EmailSender for SendGridEmailSender {
 ### 1. Enrollment & Verification for TOTP
 
 #### Enrollment (Server Function)
-```rust
+```rust,no_run
 #[server(EnrollTotp, "/api")]
 pub async fn enroll_totp(email: String) -> Result<String, ServerFnError> {
     let state = use_context::<AppState>().ok_or_else(|| ServerFnError::new("State missing"))?;
@@ -455,7 +457,7 @@ pub async fn enroll_totp(email: String) -> Result<String, ServerFnError> {
 ```
 
 #### Verification & Login (Server Function with Anti-Replay)
-```rust
+```rust,no_run
 #[server(VerifyTotp, "/api")]
 pub async fn verify_totp(email: String, code: String) -> Result<bool, ServerFnError> {
     let state = use_context::<AppState>().ok_or_else(|| ServerFnError::new("State missing"))?;
@@ -476,7 +478,7 @@ pub async fn verify_totp(email: String, code: String) -> Result<bool, ServerFnEr
 ### 2. Passwordless Signed Magic Links
 
 #### Generate Magic Link Request (Server Function)
-```rust
+```rust,no_run
 #[server(RequestMagicLink, "/api")]
 pub async fn request_magic_link(email: String) -> Result<String, ServerFnError> {
     let state = use_context::<AppState>().ok_or_else(|| ServerFnError::new("State missing"))?;
@@ -508,7 +510,7 @@ pub async fn request_magic_link(email: String) -> Result<String, ServerFnError> 
 #### Consume & Verify Magic Link Token (Route Callback Handler)
 When a user clicks the magic link, they are directed to the callback route (e.g. `/magic-callback?token=...`). Extract the query token and verify it:
 
-```rust
+```rust,no_run
 #[server(ConsumeMagicLinkToken, "/api")]
 pub async fn consume_magic_link_token(token: String) -> Result<bool, ServerFnError> {
     let state = use_context::<AppState>().ok_or_else(|| ServerFnError::new("State missing"))?;
@@ -529,62 +531,4 @@ pub async fn consume_magic_link_token(token: String) -> Result<bool, ServerFnErr
 
 ---
 
-## Interactive UI Components Reference
-
-The `leptos-wasi-ui` crate provides configurable, styled frontend components for authenticating and managing user credentials.
-
-### `LoginForm`
-Tabbed interface for OTP, Magic Link, and TOTP.
-- *Props*:
-  - `show_otp` (optional `bool`, defaults to `true`): Enables the OTP sign-in tab.
-  - `show_magic_link` (optional `bool`, defaults to `true`): Enables the Magic Link request tab.
-  - `show_totp` (optional `bool`, defaults to `true`): Enables the TOTP verification tab.
-  - `show_passkey` (optional `bool`, defaults to `true`): Renders WebAuthn Passkey buttons.
-  - `on_passkey_login` (optional callback): Triggered when passkey authentication starts.
-  - `passkey_login_pending` (`Signal<bool>`): Triggers loading indicators on the login button.
-
-### `OtpForm`
-Renders a layout for requesting or entering a 6-digit one-time password code.
-- *Props*:
-  - `email` (optional `String` signal): Prefills the user email input.
-  - `on_submit` (callback returning the entered code): Invoked on submit.
-
-### `MagicLinkForm`
-Captures the user's email to initiate a magic link request.
-- *Props*:
-  - `on_submit` (callback with email): Invoked when requesting a link.
-
-### `TotpSetup`
-A setup wizard to register time-based MFA authenticator apps.
-- *Props*:
-  - `issuer` (`&str`): The name of the service shown in Google Authenticator or Authy.
-  - `email` (`&str`): The user email account.
-  - `qr_data_uri` (`Option<String>`): Data URI string representing the QR code image.
-  - `secret_key` (`&str`): Plaintext base32 encoded secret key.
-  - `on_verify` (callback with code): Dispatched when the user enters the verification code.
-
-### `MfaStatus`
-Displays the active MFA configuration state.
-- *Props*:
-  - `enabled` (`bool` signal): Controls displaying of disabled/enabled badge status.
-  - `on_disable` (callback): Executed when the user clicks the "Disable MFA" button.
-
-### `SessionList`
-Lists active user sessions and allows individual revocation.
-- *Props*:
-  - `sessions` (`Vec<Session>` signal): Vector of active sessions.
-  - `on_revoke` (callback with `session_id`): Triggered to revoke a selected session.
-
-### `PasskeyRegisterButton` / `PasskeyLoginButton`
-Wrapper buttons trigger standard WebAuthn browser calls.
-- *Props*:
-  - `pending` (`Signal<bool>`): Disables input while credentials wait for signing.
-  - `on_click` (callback): Fired to request challenges.
-
-### `PasskeyList` (requires `passkey` feature)
-Panel showing registered passkeys.
-- *Props*:
-  - `passkeys` (`Signal<Vec<StoredPasskey>>`): Vector of stored user credentials.
-  - `pending` (`Signal<bool>`): Renders loaders during operations.
-  - `on_rename` (callback with ID/Name): Renames a passkey nickname.
-  - `on_delete` (callback with ID): Deletes a stored credential.
+[← Back to README](../README.md) · **1 of 4** · [Next: UI Components →](ui_components.md)
